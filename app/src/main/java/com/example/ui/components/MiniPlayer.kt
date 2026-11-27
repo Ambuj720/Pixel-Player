@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,30 +31,33 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audio.PlaybackProgress
 import com.example.data.model.Track
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun MiniPlayer(
     track: Track,
     isPlaying: Boolean,
-    positionMs: Long,
+    progressFlow: StateFlow<PlaybackProgress>,
     durationMs: Long,
     onExpand: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onNext: () -> Unit,
+    compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val progress = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-
+    val cornerRadius = if (compact) 20.dp else 24.dp
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(cornerRadius),
         tonalElevation = 6.dp,
         shadowElevation = 8.dp,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(24.dp))
+            .padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 6.dp)
+            .clip(RoundedCornerShape(cornerRadius))
             .pointerInput(Unit) {
                 detectVerticalDragGestures { _, dragAmount ->
                     if (dragAmount < -18f) onExpand()
@@ -66,18 +70,18 @@ fun MiniPlayer(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(horizontal = 10.dp, vertical = if (compact) 5.dp else 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TrackArtwork(
                     artworkPath = track.artworkPath,
                     title = track.title,
                     seedColor = track.artworkSeedColor,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.size(48.dp)
+                    shape = RoundedCornerShape(if (compact) 12.dp else 14.dp),
+                    modifier = Modifier.size(if (compact) 40.dp else 48.dp)
                 )
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(if (compact) 10.dp else 12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -101,22 +105,22 @@ fun MiniPlayer(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(48.dp)
                         .testTag("mini_play_pause_button")
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
-                        modifier = Modifier.padding(10.dp)
+                        modifier = Modifier.padding(11.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(2.dp))
 
                 IconButton(
                     onClick = onNext,
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(48.dp)
                         .testTag("mini_next_button")
                 ) {
                     Icon(
@@ -127,14 +131,31 @@ fun MiniPlayer(
                 }
             }
 
-            LinearProgressIndicator(
-                progress = { progress },
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
+            MiniPlayerProgressBar(
+                progressFlow = progressFlow,
+                fallbackDurationMs = durationMs
             )
         }
     }
+}
+
+@Composable
+private fun MiniPlayerProgressBar(
+    progressFlow: StateFlow<PlaybackProgress>,
+    fallbackDurationMs: Long
+) {
+    val progressState by progressFlow.collectAsStateWithLifecycle()
+    val effectiveDuration = if (progressState.durationMs > 0L) progressState.durationMs else fallbackDurationMs
+    val fraction = if (effectiveDuration > 0L) {
+        (progressState.positionMs.toFloat() / effectiveDuration.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+
+    LinearProgressIndicator(
+        progress = { fraction },
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(3.dp)
+    )
 }

@@ -30,4 +30,5 @@
     <string name="empty_library_title">Your local music studio awaits</string>
     <string name="empty_library_subtitle">Import MP3, FLAC, WAV, M4A, AAC, or OGG files from your device, or generate local synth audio samples to start listening right away.</string>
     <string name="now_playing_empty">Select a track to start listening</string>
+    <string name="notification_channel_playback">Music Playback</string>
 </resources>

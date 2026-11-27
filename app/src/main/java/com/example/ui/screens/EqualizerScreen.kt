@@ -4,6 +4,7 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -17,7 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
@@ -49,6 +52,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.model.ActiveAudioFormat
 import com.example.data.model.AtmosProfile
@@ -83,27 +87,42 @@ fun EqualizerScreen(
     val context = LocalContext.current
     val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
-    LazyColumn(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        contentAlignment = Alignment.TopCenter
     ) {
-        item(key = "studio_header") {
-            Column {
-                Text(
-                    text = "Audio Studio & Atmos",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Dolby Atmos spatialization, 5-band DSP equalizer & playback tuning",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        val isWideLandscape = maxWidth >= 660.dp
+        val isShortLandscape = maxHeight < 480.dp && maxWidth > maxHeight
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 920.dp),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = if (isShortLandscape) 10.dp else 16.dp,
+                bottom = if (isShortLandscape) 84.dp else 120.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(if (isShortLandscape) 14.dp else 18.dp)
+        ) {
+            item(key = "studio_header") {
+                Column {
+                    Text(
+                        text = "Audio Studio & Atmos",
+                        style = if (isShortLandscape) MaterialTheme.typography.headlineMedium
+                        else MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Dolby Atmos spatialization, 5-band DSP equalizer & playback tuning",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-        }
 
         // Dolby Atmos & Android Spatial Audio Expressive Card
         item(key = "dolby_atmos_card") {
@@ -285,14 +304,20 @@ fun EqualizerScreen(
                                 )
                             }
                         },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = CircleShape,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .height(48.dp)
                             .testTag("system_spatial_settings_button")
                     ) {
                         Icon(Icons.Rounded.Headphones, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Android Sound & Spatial Audio Settings")
+                        Text(
+                            text = "Sound & Spatial Audio Settings",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
@@ -330,193 +355,405 @@ fun EqualizerScreen(
             }
         }
 
-        // Frequency Response Curve Visualizer
-        item(key = "eq_curve") {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = RoundedCornerShape(28.dp),
-                tonalElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+        // Frequency Curve + Preset Chips + 5-Band Sliders (2-column console in landscape, stacked in portrait)
+        if (isWideLandscape) {
+            item(key = "eq_studio_split") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(
+                        modifier = Modifier.weight(0.46f),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            shape = RoundedCornerShape(28.dp),
+                            tonalElevation = 2.dp,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Frequency Curve",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    Text(
+                                        text = eqState.activePreset,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                EqCurveCanvas(
+                                    bands = eqState.bands,
+                                    enabled = eqState.isEnabled,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(116.dp)
+                                )
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                text = "Frequency Curve",
+                                text = "EQ Presets",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Bold
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                EqPreset.BuiltIn.forEach { preset ->
+                                    FilterChip(
+                                        selected = eqState.activePreset == preset.name,
+                                        onClick = { onApplyPreset(preset) },
+                                        label = { Text(preset.name) },
+                                        modifier = Modifier.testTag("eq_preset_${preset.name.lowercase().replace(' ', '_')}")
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = RoundedCornerShape(28.dp),
+                        modifier = Modifier.weight(0.54f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Frequency Bands",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            eqState.bands.forEach { band ->
+                                val gainDb = band.levelMb / 100f
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = band.label,
+                                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                        modifier = Modifier.width(54.dp)
+                                    )
+                                    Slider(
+                                        value = band.levelMb.toFloat(),
+                                        onValueChange = { value -> onBandLevelChange(band.index, value.roundToInt()) },
+                                        valueRange = band.minMb.toFloat()..band.maxMb.toFloat(),
+                                        enabled = eqState.isEnabled,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("eq_band_slider_${band.index}")
+                                    )
+                                    Text(
+                                        text = String.format("%+.1f dB", gainDb),
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                        color = if (eqState.isEnabled) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.width(62.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item(key = "speed_sleep_row") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = RoundedCornerShape(28.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.Speed, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Playback Speed",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                speeds.forEach { spd ->
+                                    FilterChip(
+                                        selected = playbackSpeed == spd,
+                                        onClick = { onSpeedChange(spd) },
+                                        label = { Text("${spd}x", fontFamily = MonoFontFamily) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = RoundedCornerShape(28.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text("Sleep Timer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = if (sleepTimer.isActive) "Fading out in ${formatDurationMs(sleepTimer.remainingMs)}"
+                                        else "Automatically fade out and pause playback",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            FilledTonalButton(
+                                onClick = onOpenSleepTimer,
+                                shape = CircleShape,
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                            ) {
+                                Text(
+                                    text = if (sleepTimer.isActive) "Adjust Timer" else "Set Sleep Timer",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Frequency Response Curve Visualizer
+            item(key = "eq_curve") {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(28.dp),
+                    tonalElevation = 2.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Frequency Curve",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Text(
+                                text = eqState.activePreset,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        Text(
-                            text = eqState.activePreset,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
-                    EqCurveCanvas(
-                        bands = eqState.bands,
-                        enabled = eqState.isEnabled,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(128.dp)
-                    )
-                }
-            }
-        }
-
-        // Preset selector chips
-        item(key = "eq_presets") {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "EQ Presets",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    EqPreset.BuiltIn.forEach { preset ->
-                        FilterChip(
-                            selected = eqState.activePreset == preset.name,
-                            onClick = { onApplyPreset(preset) },
-                            label = { Text(preset.name) },
-                            modifier = Modifier.testTag("eq_preset_${preset.name.lowercase().replace(' ', '_')}")
+                        EqCurveCanvas(
+                            bands = eqState.bands,
+                            enabled = eqState.isEnabled,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(128.dp)
                         )
                     }
                 }
             }
-        }
 
-        // 5-Band Interactive Gain Sliders
-        item(key = "eq_sliders") {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = RoundedCornerShape(28.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+            // Preset selector chips
+            item(key = "eq_presets") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Frequency Bands",
+                        text = "EQ Presets",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    eqState.bands.forEach { band ->
-                        val gainDb = band.levelMb / 100f
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = band.label,
-                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
-                                modifier = Modifier.width(56.dp)
-                            )
-                            Slider(
-                                value = band.levelMb.toFloat(),
-                                onValueChange = { value -> onBandLevelChange(band.index, value.roundToInt()) },
-                                valueRange = band.minMb.toFloat()..band.maxMb.toFloat(),
-                                enabled = eqState.isEnabled,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("eq_band_slider_${band.index}")
-                            )
-                            Text(
-                                text = String.format("%+.1f dB", gainDb),
-                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                                color = if (eqState.isEnabled) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(64.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Playback Speed Studio Card
-        item(key = "speed_card") {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = RoundedCornerShape(28.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Speed, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Playback Speed",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        speeds.forEach { spd ->
+                        EqPreset.BuiltIn.forEach { preset ->
                             FilterChip(
-                                selected = playbackSpeed == spd,
-                                onClick = { onSpeedChange(spd) },
-                                label = { Text("${spd}x", fontFamily = MonoFontFamily) }
+                                selected = eqState.activePreset == preset.name,
+                                onClick = { onApplyPreset(preset) },
+                                label = { Text(preset.name) },
+                                modifier = Modifier.testTag("eq_preset_${preset.name.lowercase().replace(' ', '_')}")
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 5-Band Interactive Gain Sliders
+            item(key = "eq_sliders") {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "Frequency Bands",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        eqState.bands.forEach { band ->
+                            val gainDb = band.levelMb / 100f
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = band.label,
+                                    style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                    modifier = Modifier.width(56.dp)
+                                )
+                                Slider(
+                                    value = band.levelMb.toFloat(),
+                                    onValueChange = { value -> onBandLevelChange(band.index, value.roundToInt()) },
+                                    valueRange = band.minMb.toFloat()..band.maxMb.toFloat(),
+                                    enabled = eqState.isEnabled,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("eq_band_slider_${band.index}")
+                                )
+                                Text(
+                                    text = String.format("%+.1f dB", gainDb),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                    color = if (eqState.isEnabled) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(64.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Playback Speed Studio Card
+            item(key = "speed_card") {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Speed, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Playback Speed",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            speeds.forEach { spd ->
+                                FilterChip(
+                                    selected = playbackSpeed == spd,
+                                    onClick = { onSpeedChange(spd) },
+                                    label = { Text("${spd}x", fontFamily = MonoFontFamily) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Sleep Timer Card
+            item(key = "sleep_card") {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(28.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Sleep Timer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = if (sleepTimer.isActive) "Fading out in ${formatDurationMs(sleepTimer.remainingMs)}"
+                                    else "Automatically fade out and pause playback",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        FilledTonalButton(
+                            onClick = onOpenSleepTimer,
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Text(
+                                text = if (sleepTimer.isActive) "Adjust" else "Set Timer",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1
                             )
                         }
                     }
                 }
             }
         }
-
-        // Sleep Timer Card
-        item(key = "sleep_card") {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = RoundedCornerShape(28.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Rounded.Bedtime, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text("Sleep Timer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = if (sleepTimer.isActive) "Fading out in ${formatDurationMs(sleepTimer.remainingMs)}"
-                                else "Automatically fade out and pause playback",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    FilledTonalButton(onClick = onOpenSleepTimer, shape = RoundedCornerShape(16.dp)) {
-                        Text(if (sleepTimer.isActive) "Adjust" else "Set Timer")
-                    }
-                }
-            }
         }
     }
 }

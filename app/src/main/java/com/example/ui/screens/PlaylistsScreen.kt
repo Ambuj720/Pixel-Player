@@ -4,10 +4,12 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,7 +22,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
@@ -111,26 +116,37 @@ fun PlaylistsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Playlists",
                         style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "${uiState.playlists.size} local collections",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
                     )
                 }
+                Spacer(modifier = Modifier.width(12.dp))
                 Button(
                     onClick = { showCreateDialog = true },
-                    shape = RoundedCornerShape(20.dp),
-                    modifier = Modifier.testTag("create_playlist_button")
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .height(48.dp)
+                        .testTag("create_playlist_button")
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("New Playlist")
+                    Text(
+                        text = "New Playlist",
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1
+                    )
                 }
             }
 
@@ -168,18 +184,25 @@ fun PlaylistsScreen(
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 166.dp),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 100.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(uiState.playlists, key = { it.id }) { pl ->
-                        val plTracks = pl.trackIds.mapNotNull { uiState.tracksById[it] }
+                    items(
+                        items = uiState.playlists,
+                        key = { it.id },
+                        contentType = { "playlist_card" }
+                    ) { pl ->
+                        val leadTrack = remember(pl.trackIds, uiState.tracksById) {
+                            pl.trackIds.firstNotNullOfOrNull { uiState.tracksById[it] }
+                        }
                         PlaylistCard(
                             playlist = pl,
-                            leadTrack = plTracks.firstOrNull(),
+                            leadTrack = leadTrack,
                             onClick = { onOpenPlaylist(pl.id) },
                             onQuickPlay = {
+                                val plTracks = pl.trackIds.mapNotNull { uiState.tracksById[it] }
                                 if (plTracks.isNotEmpty()) onPlayTracks(plTracks, 0, false)
                             }
                         )
@@ -225,17 +248,18 @@ private fun PlaylistDetailView(
     var showAddTracksDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    LazyColumn(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .statusBarsPadding(),
-        contentPadding = PaddingValues(bottom = 120.dp)
+            .statusBarsPadding()
     ) {
-        item(key = "top_bar") {
+        val useSplitLandscape = maxWidth >= 600.dp && maxWidth > maxHeight
+
+        val topBar: @Composable () -> Unit = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = if (useSplitLandscape) 2.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
@@ -266,30 +290,30 @@ private fun PlaylistDetailView(
             }
         }
 
-        item(key = "hero") {
+        val heroCard: @Composable (Modifier) -> Unit = { cardMod ->
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = RoundedCornerShape(30.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
+                shape = RoundedCornerShape(28.dp),
+                modifier = cardMod
             ) {
-                Column(modifier = Modifier.padding(18.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TrackArtwork(
                             artworkPath = tracks.firstOrNull()?.artworkPath,
                             title = playlist.name,
                             seedColor = tracks.firstOrNull()?.artworkSeedColor,
                             fallbackIndex = playlist.coverArtIndex,
-                            shape = RoundedCornerShape(22.dp),
-                            modifier = Modifier.size(96.dp)
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.size(if (useSplitLandscape) 72.dp else 96.dp)
                         )
-                        Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.width(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = playlist.name,
                                 style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                             if (playlist.description.isNotBlank()) {
                                 Text(
@@ -309,130 +333,166 @@ private fun PlaylistDetailView(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             onClick = { if (tracks.isNotEmpty()) onPlayAll(tracks, false) },
                             enabled = tracks.isNotEmpty(),
-                            shape = RoundedCornerShape(18.dp),
+                            shape = CircleShape,
                             modifier = Modifier
                                 .weight(1f)
                                 .height(48.dp)
                         ) {
-                            Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Play")
+                            Text("Play", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                         }
                         FilledTonalButton(
                             onClick = { if (tracks.isNotEmpty()) onPlayAll(tracks, true) },
                             enabled = tracks.isNotEmpty(),
-                            shape = RoundedCornerShape(18.dp),
+                            shape = CircleShape,
                             modifier = Modifier
                                 .weight(1f)
                                 .height(48.dp)
                         ) {
-                            Icon(Icons.Rounded.Shuffle, contentDescription = null)
+                            Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Shuffle")
+                            Text("Shuffle", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                         }
                         FilledTonalButton(
                             onClick = { showAddTracksDialog = true },
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp),
-                            modifier = Modifier.height(48.dp)
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.size(48.dp)
                         ) {
-                            Icon(Icons.Rounded.Add, contentDescription = "Add songs")
+                            Icon(Icons.Rounded.Add, contentDescription = "Add songs", modifier = Modifier.size(20.dp))
                         }
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
         }
 
-        if (tracks.isEmpty()) {
-            item(key = "empty_playlist") {
-                Column(
+        if (useSplitLandscape) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                topBar()
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .weight(1f)
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text("This playlist is empty", style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    FilledTonalButton(onClick = { showAddTracksDialog = true }) {
-                        Icon(Icons.Rounded.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Add Songs from Library")
+                    Column(
+                        modifier = Modifier
+                            .weight(0.42f)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 84.dp)
+                    ) {
+                        heroCard(Modifier.fillMaxWidth())
+                    }
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(0.58f)
+                            .fillMaxHeight(),
+                        contentPadding = PaddingValues(bottom = 84.dp)
+                    ) {
+                        if (tracks.isEmpty()) {
+                            item(key = "empty_playlist") {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text("This playlist is empty", style = MaterialTheme.typography.titleMedium)
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    FilledTonalButton(
+                                        onClick = { showAddTracksDialog = true },
+                                        shape = CircleShape,
+                                        modifier = Modifier.height(48.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Add Songs from Library", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                                    }
+                                }
+                            }
+                        } else {
+                            itemsIndexed(
+                                items = tracks,
+                                key = { idx, t -> "${t.id}_$idx" },
+                                contentType = { _, _ -> "playlist_track" }
+                            ) { index, track ->
+                                PlaylistTrackRow(
+                                    track = track,
+                                    index = index,
+                                    lastIndex = tracks.lastIndex,
+                                    isCurrent = track.id == currentTrackId,
+                                    onPlay = { onPlayAtIndex(tracks, index) },
+                                    onMoveUp = { onMoveTrack(index, index - 1) },
+                                    onMoveDown = { onMoveTrack(index, index + 1) },
+                                    onRemove = { onRemoveTrack(track.id) },
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
         } else {
-            itemsIndexed(tracks, key = { idx, t -> "${t.id}_$idx" }) { index, track ->
-                val isCurrent = track.id == currentTrackId
-                Surface(
-                    color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                    else MaterialTheme.colorScheme.surfaceContainerLow,
-                    shape = RoundedCornerShape(20.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable { onPlayAtIndex(tracks, index) }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TrackArtwork(
-                            artworkPath = track.artworkPath,
-                            title = track.title,
-                            seedColor = track.artworkSeedColor,
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.size(48.dp)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 120.dp)
+            ) {
+                item(key = "top_bar") { topBar() }
+                item(key = "hero") {
+                    heroCard(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                if (tracks.isEmpty()) {
+                    item(key = "empty_playlist") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("This playlist is empty", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.height(10.dp))
+                            FilledTonalButton(
+                                onClick = { showAddTracksDialog = true },
+                                shape = CircleShape,
+                                modifier = Modifier.height(48.dp)
+                            ) {
+                                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Add Songs from Library", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                            }
+                        }
+                    }
+                } else {
+                    itemsIndexed(
+                        items = tracks,
+                        key = { idx, t -> "${t.id}_$idx" },
+                        contentType = { _, _ -> "playlist_track" }
+                    ) { index, track ->
+                        PlaylistTrackRow(
+                            track = track,
+                            index = index,
+                            lastIndex = tracks.lastIndex,
+                            isCurrent = track.id == currentTrackId,
+                            onPlay = { onPlayAtIndex(tracks, index) },
+                            onMoveUp = { onMoveTrack(index, index - 1) },
+                            onMoveDown = { onMoveTrack(index, index + 1) },
+                            onRemove = { onRemoveTrack(track.id) },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = track.title,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = track.artist,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        IconButton(
-                            onClick = { onMoveTrack(index, index - 1) },
-                            enabled = index > 0,
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(Icons.Rounded.ArrowUpward, contentDescription = "Move up", modifier = Modifier.size(18.dp))
-                        }
-                        IconButton(
-                            onClick = { onMoveTrack(index, index + 1) },
-                            enabled = index < tracks.lastIndex,
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(Icons.Rounded.ArrowDownward, contentDescription = "Move down", modifier = Modifier.size(18.dp))
-                        }
-                        IconButton(
-                            onClick = { onRemoveTrack(track.id) },
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.RemoveCircleOutline,
-                                contentDescription = "Remove from playlist",
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
                     }
                 }
             }
@@ -510,5 +570,83 @@ private fun PlaylistDetailView(
                 TextButton(onClick = { showAddTracksDialog = false }) { Text("Done") }
             }
         )
+    }
+}
+
+@Composable
+private fun PlaylistTrackRow(
+    track: Track,
+    index: Int,
+    lastIndex: Int,
+    isCurrent: Boolean,
+    onPlay: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(20.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClick = onPlay)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TrackArtwork(
+                artworkPath = track.artworkPath,
+                title = track.title,
+                seedColor = track.artworkSeedColor,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = track.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(
+                onClick = onMoveUp,
+                enabled = index > 0,
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(Icons.Rounded.ArrowUpward, contentDescription = "Move up", modifier = Modifier.size(18.dp))
+            }
+            IconButton(
+                onClick = onMoveDown,
+                enabled = index < lastIndex,
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(Icons.Rounded.ArrowDownward, contentDescription = "Move down", modifier = Modifier.size(18.dp))
+            }
+            IconButton(
+                onClick = onRemove,
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.RemoveCircleOutline,
+                    contentDescription = "Remove from playlist",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
     }
 }

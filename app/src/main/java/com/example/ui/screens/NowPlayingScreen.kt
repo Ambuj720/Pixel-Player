@@ -18,22 +18,28 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.rounded.Bedtime
@@ -51,9 +57,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -72,6 +75,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audio.PlaybackProgress
 import com.example.audio.PlaybackState
 import com.example.data.model.SleepTimerState
 import com.example.data.model.SpatialAudioState
@@ -81,10 +86,12 @@ import com.example.ui.components.LyricsPanel
 import com.example.ui.components.PlaybackControls
 import com.example.ui.components.QueuePanel
 import com.example.ui.components.TrackArtwork
-import com.example.ui.components.VolumeControlRow
 import com.example.ui.components.formatDurationMs
 import com.example.ui.theme.LocalReducedMotion
 import com.example.ui.theme.MonoFontFamily
+import kotlinx.coroutines.flow.StateFlow
+
+private val PLAYBACK_SPEEDS = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
 private enum class NowPlayingTab(val label: String) {
     PLAYER("Player"),
@@ -95,6 +102,7 @@ private enum class NowPlayingTab(val label: String) {
 @Composable
 fun NowPlayingScreen(
     playback: PlaybackState,
+    playbackProgress: StateFlow<PlaybackProgress>,
     spatialAudio: SpatialAudioState,
     sleepTimer: SleepTimerState,
     isSidePanel: Boolean,
@@ -105,8 +113,6 @@ fun NowPlayingScreen(
     onSeekTo: (Long) -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
-    onVolumeChange: (Float) -> Unit,
-    onToggleMute: () -> Unit,
     onSpeedChange: (Float) -> Unit,
     onToggleFavorite: (Track) -> Unit,
     onOpenSleepTimer: () -> Unit,
@@ -118,20 +124,29 @@ fun NowPlayingScreen(
     onSaveLyrics: (String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (!isSidePanel) {
-        BackHandler(onBack = onCollapse)
-    }
-
     val track = playback.currentTrack
     var activeTab by remember { mutableStateOf(NowPlayingTab.PLAYER) }
 
-    val backdropBrush = Brush.verticalGradient(
-        colors = listOf(
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
-            MaterialTheme.colorScheme.surfaceContainerLow,
-            MaterialTheme.colorScheme.surface
+    BackHandler(enabled = activeTab != NowPlayingTab.PLAYER || !isSidePanel) {
+        if (activeTab != NowPlayingTab.PLAYER) {
+            activeTab = NowPlayingTab.PLAYER
+        } else if (!isSidePanel) {
+            onCollapse()
+        }
+    }
+
+    val primaryContainerColor = MaterialTheme.colorScheme.primaryContainer
+    val surfaceLowColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val backdropBrush = remember(primaryContainerColor, surfaceLowColor, surfaceColor) {
+        Brush.verticalGradient(
+            colors = listOf(
+                primaryContainerColor.copy(alpha = 0.62f),
+                surfaceLowColor,
+                surfaceColor
+            )
         )
-    )
+    }
 
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -139,15 +154,22 @@ fun NowPlayingScreen(
             .fillMaxSize()
             .background(backdropBrush)
     ) {
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .background(backdropBrush)
                 .let { mod ->
-                    if (!isSidePanel) mod.statusBarsPadding().navigationBarsPadding()
-                    else mod.statusBarsPadding()
+                    if (!isSidePanel) {
+                        mod
+                            .statusBarsPadding()
+                            .navigationBarsPadding()
+                            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                    } else {
+                        mod.statusBarsPadding()
+                    }
                 }
         ) {
+            val isShortViewport = maxHeight < 480.dp
             if (track == null) {
                 EmptyNowPlayingView(
                     isSidePanel = isSidePanel,
@@ -158,39 +180,20 @@ fun NowPlayingScreen(
                     // Header bar
                     NowPlayingHeader(
                         isSidePanel = isSidePanel,
+                        compact = isShortViewport,
+                        activeTab = activeTab,
                         albumName = track.album,
+                        queueCount = playback.queue.size,
                         sleepTimer = sleepTimer,
+                        onBackToPlayer = { activeTab = NowPlayingTab.PLAYER },
                         onCollapse = onCollapse,
                         onOpenSleepTimer = onOpenSleepTimer,
                         onAddToPlaylist = { onAddToPlaylist(track) }
                     )
 
-                    // Mode switcher for Player / Queue / Lyrics
-                    SingleChoiceSegmentedButtonRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 4.dp)
-                    ) {
-                        NowPlayingTab.entries.forEachIndexed { index, tab ->
-                            SegmentedButton(
-                                selected = activeTab == tab,
-                                onClick = { activeTab = tab },
-                                shape = SegmentedButtonDefaults.itemShape(
-                                    index = index,
-                                    count = NowPlayingTab.entries.size
-                                ),
-                                modifier = Modifier.testTag("now_playing_tab_${tab.name.lowercase()}")
-                            ) {
-                                Text(
-                                    text = if (tab == NowPlayingTab.QUEUE) "Queue (${playback.queue.size})"
-                                    else tab.label,
-                                    maxLines = 1
-                                )
-                            }
-                        }
+                    if (!isShortViewport) {
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
-
-                    Spacer(modifier = Modifier.height(6.dp))
 
                     when (activeTab) {
                         NowPlayingTab.PLAYER -> {
@@ -199,18 +202,27 @@ fun NowPlayingScreen(
                                     .fillMaxWidth()
                                     .weight(1f)
                             ) {
-                                val useSplit = !isSidePanel && maxWidth >= 680.dp
+                                val isShortLandscape = maxHeight < 440.dp
+                                val useSplit = !isSidePanel && (maxWidth >= 600.dp || (maxWidth > maxHeight && maxWidth >= 480.dp))
                                 if (useSplit) {
+                                    val splitArtSize = minOf(
+                                        maxHeight - if (isShortLandscape) 14.dp else 28.dp,
+                                        maxWidth * 0.38f,
+                                        340.dp
+                                    ).coerceAtLeast(132.dp)
                                     Row(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .padding(horizontal = 28.dp, vertical = 12.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(32.dp),
+                                            .padding(
+                                                horizontal = if (isShortLandscape) 20.dp else 28.dp,
+                                                vertical = if (isShortLandscape) 4.dp else 12.dp
+                                            ),
+                                        horizontalArrangement = Arrangement.spacedBy(if (isShortLandscape) 22.dp else 32.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .weight(0.95f)
+                                                .weight(0.88f)
                                                 .fillMaxHeight(),
                                             contentAlignment = Alignment.Center
                                         ) {
@@ -219,23 +231,22 @@ fun NowPlayingScreen(
                                                 isPlaying = playback.isPlaying,
                                                 onSwipeNext = onNext,
                                                 onSwipePrevious = onPrevious,
-                                                modifier = Modifier
-                                                    .widthIn(max = 360.dp)
-                                                    .aspectRatio(1f)
+                                                modifier = Modifier.size(splitArtSize)
                                             )
                                         }
                                         Column(
                                             modifier = Modifier
-                                                .weight(1.05f)
+                                                .weight(1.12f)
                                                 .verticalScroll(rememberScrollState()),
                                             verticalArrangement = Arrangement.Center
                                         ) {
                                             NowPlayingControlsBody(
                                                 track = track,
                                                 playback = playback,
+                                                playbackProgress = playbackProgress,
                                                 spatialAudio = spatialAudio,
                                                 sleepTimer = sleepTimer,
-                                                compact = false,
+                                                compact = isShortLandscape,
                                                 onToggleFavorite = { onToggleFavorite(track) },
                                                 onSeekTo = onSeekTo,
                                                 onTogglePlayPause = onTogglePlayPause,
@@ -243,8 +254,6 @@ fun NowPlayingScreen(
                                                 onNext = onNext,
                                                 onToggleShuffle = onToggleShuffle,
                                                 onCycleRepeat = onCycleRepeat,
-                                                onVolumeChange = onVolumeChange,
-                                                onToggleMute = onToggleMute,
                                                 onSpeedChange = onSpeedChange,
                                                 onOpenQueue = { activeTab = NowPlayingTab.QUEUE },
                                                 onOpenLyrics = { activeTab = NowPlayingTab.LYRICS },
@@ -254,13 +263,21 @@ fun NowPlayingScreen(
                                         }
                                     }
                                 } else {
+                                    val horizontalPad = if (isSidePanel) 18.dp else 24.dp
+                                    val maxArtByWidth = (maxWidth - horizontalPad * 2).coerceAtLeast(160.dp)
+                                    val maxArtByHeight = (maxHeight * 0.45f).coerceIn(168.dp, if (isSidePanel) 260.dp else 316.dp)
+                                    val artSize = minOf(maxArtByWidth, maxArtByHeight)
+                                    val isCompactHeight = maxHeight < 540.dp
+
                                     Column(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .verticalScroll(rememberScrollState())
                                             .padding(
-                                                horizontal = if (isSidePanel) 18.dp else 24.dp,
-                                                vertical = 10.dp
+                                                start = horizontalPad,
+                                                end = horizontalPad,
+                                                top = 8.dp,
+                                                bottom = 18.dp
                                             ),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
@@ -269,18 +286,16 @@ fun NowPlayingScreen(
                                             isPlaying = playback.isPlaying,
                                             onSwipeNext = onNext,
                                             onSwipePrevious = onPrevious,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .widthIn(max = if (isSidePanel) 270.dp else 340.dp)
-                                                .aspectRatio(1f)
+                                            modifier = Modifier.size(artSize)
                                         )
-                                        Spacer(modifier = Modifier.height(if (isSidePanel) 18.dp else 24.dp))
+                                        Spacer(modifier = Modifier.height(if (isSidePanel) 16.dp else 20.dp))
                                         NowPlayingControlsBody(
                                             track = track,
                                             playback = playback,
+                                            playbackProgress = playbackProgress,
                                             spatialAudio = spatialAudio,
                                             sleepTimer = sleepTimer,
-                                            compact = isSidePanel,
+                                            compact = isSidePanel || isCompactHeight,
                                             onToggleFavorite = { onToggleFavorite(track) },
                                             onSeekTo = onSeekTo,
                                             onTogglePlayPause = onTogglePlayPause,
@@ -288,8 +303,6 @@ fun NowPlayingScreen(
                                             onNext = onNext,
                                             onToggleShuffle = onToggleShuffle,
                                             onCycleRepeat = onCycleRepeat,
-                                            onVolumeChange = onVolumeChange,
-                                            onToggleMute = onToggleMute,
                                             onSpeedChange = onSpeedChange,
                                             onOpenQueue = { activeTab = NowPlayingTab.QUEUE },
                                             onOpenLyrics = { activeTab = NowPlayingTab.LYRICS },
@@ -318,7 +331,7 @@ fun NowPlayingScreen(
                         NowPlayingTab.LYRICS -> {
                             LyricsPanel(
                                 track = track,
-                                positionMs = playback.positionMs,
+                                progressFlow = playbackProgress,
                                 onSeekTo = onSeekTo,
                                 onSaveLyrics = onSaveLyrics,
                                 modifier = Modifier
@@ -336,17 +349,22 @@ fun NowPlayingScreen(
 @Composable
 private fun NowPlayingHeader(
     isSidePanel: Boolean,
+    compact: Boolean,
+    activeTab: NowPlayingTab,
     albumName: String,
+    queueCount: Int,
     sleepTimer: SleepTimerState,
+    onBackToPlayer: () -> Unit,
     onCollapse: () -> Unit,
     onOpenSleepTimer: () -> Unit,
     onAddToPlaylist: () -> Unit
 ) {
+    val isSubView = activeTab != NowPlayingTab.PLAYER
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .let { mod ->
-                if (!isSidePanel) {
+                if (!isSidePanel && !isSubView) {
                     mod.pointerInput(Unit) {
                         detectVerticalDragGestures { _, dragAmount ->
                             if (dragAmount > 22f) onCollapse()
@@ -354,10 +372,23 @@ private fun NowPlayingHeader(
                     }
                 } else mod
             }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = if (compact) 2.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (!isSidePanel) {
+        if (isSubView) {
+            IconButton(
+                onClick = onBackToPlayer,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("now_playing_back_to_player_button")
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "Back to Player",
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        } else if (!isSidePanel) {
             IconButton(
                 onClick = onCollapse,
                 modifier = Modifier
@@ -379,7 +410,11 @@ private fun NowPlayingHeader(
             horizontalAlignment = if (isSidePanel) Alignment.Start else Alignment.CenterHorizontally
         ) {
             Text(
-                text = "NOW PLAYING",
+                text = when (activeTab) {
+                    NowPlayingTab.PLAYER -> "NOW PLAYING"
+                    NowPlayingTab.QUEUE -> "UP NEXT ($queueCount)"
+                    NowPlayingTab.LYRICS -> "LYRICS"
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -481,6 +516,7 @@ private fun AnimatedTrackArtwork(
 private fun NowPlayingControlsBody(
     track: Track,
     playback: PlaybackState,
+    playbackProgress: StateFlow<PlaybackProgress>,
     spatialAudio: SpatialAudioState,
     sleepTimer: SleepTimerState,
     compact: Boolean,
@@ -491,8 +527,6 @@ private fun NowPlayingControlsBody(
     onNext: () -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
-    onVolumeChange: (Float) -> Unit,
-    onToggleMute: () -> Unit,
     onSpeedChange: (Float) -> Unit,
     onOpenQueue: () -> Unit,
     onOpenLyrics: () -> Unit,
@@ -500,7 +534,6 @@ private fun NowPlayingControlsBody(
     onOpenAudioStudio: () -> Unit
 ) {
     var speedMenuExpanded by remember { mutableStateOf(false) }
-    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
     val fmt = playback.activeAudioFormat
 
     // Title, artist, favorite
@@ -543,7 +576,7 @@ private fun NowPlayingControlsBody(
     }
 
     // Live Dolby Atmos / Spatial Audio format pill
-    Spacer(modifier = Modifier.height(10.dp))
+    Spacer(modifier = Modifier.height(if (compact) 4.dp else 10.dp))
     val badgeText = remember(fmt, spatialAudio.isEnabled, spatialAudio.profile) {
         val khz = if (fmt.sampleRateHz > 0) " • ${String.format("%.1f", fmt.sampleRateHz / 1000f)} kHz" else ""
         when {
@@ -564,13 +597,13 @@ private fun NowPlayingControlsBody(
         modifier = Modifier.testTag("now_playing_atmos_badge")
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = if (compact) 4.dp else 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Rounded.SpatialAudio,
                 contentDescription = null,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(15.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
@@ -583,7 +616,7 @@ private fun NowPlayingControlsBody(
     }
 
     if (playback.errorMessage != null) {
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Surface(
             color = MaterialTheme.colorScheme.errorContainer,
             shape = RoundedCornerShape(14.dp),
@@ -593,20 +626,20 @@ private fun NowPlayingControlsBody(
                 text = playback.errorMessage,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.padding(12.dp)
+                modifier = Modifier.padding(10.dp)
             )
         }
     }
 
-    Spacer(modifier = Modifier.height(14.dp))
+    Spacer(modifier = Modifier.height(if (compact) 4.dp else 10.dp))
 
-    ExpressiveProgressBar(
-        positionMs = playback.positionMs,
-        durationMs = playback.durationMs,
+    LivePlaybackProgressBar(
+        progressFlow = playbackProgress,
+        fallbackDurationMs = playback.durationMs,
         onSeek = onSeekTo
     )
 
-    Spacer(modifier = Modifier.height(12.dp))
+    Spacer(modifier = Modifier.height(if (compact) 4.dp else 8.dp))
 
     PlaybackControls(
         isPlaying = playback.isPlaying,
@@ -620,16 +653,7 @@ private fun NowPlayingControlsBody(
         compact = compact
     )
 
-    Spacer(modifier = Modifier.height(14.dp))
-
-    VolumeControlRow(
-        volume = playback.volume,
-        isMuted = playback.isMuted,
-        onVolumeChange = onVolumeChange,
-        onToggleMute = onToggleMute
-    )
-
-    Spacer(modifier = Modifier.height(10.dp))
+    Spacer(modifier = Modifier.height(if (compact) 6.dp else 16.dp))
 
     // Expressive quick action chips: Speed, Sleep Timer, Queue, Lyrics
     Row(
@@ -654,7 +678,7 @@ private fun NowPlayingControlsBody(
                 expanded = speedMenuExpanded,
                 onDismissRequest = { speedMenuExpanded = false }
             ) {
-                speeds.forEach { spd ->
+                PLAYBACK_SPEEDS.forEach { spd ->
                     DropdownMenuItem(
                         text = { Text("${spd}x") },
                         onClick = {
@@ -689,6 +713,21 @@ private fun NowPlayingControlsBody(
             label = { Text("Lyrics") }
         )
     }
+}
+
+@Composable
+private fun LivePlaybackProgressBar(
+    progressFlow: StateFlow<PlaybackProgress>,
+    fallbackDurationMs: Long,
+    onSeek: (Long) -> Unit
+) {
+    val progress by progressFlow.collectAsStateWithLifecycle()
+    val effectiveDuration = if (progress.durationMs > 0L) progress.durationMs else fallbackDurationMs
+    ExpressiveProgressBar(
+        positionMs = progress.positionMs,
+        durationMs = effectiveDuration,
+        onSeek = onSeek
+    )
 }
 
 @Composable

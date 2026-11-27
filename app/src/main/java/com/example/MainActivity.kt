@@ -1,5 +1,9 @@
 package com.example
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -7,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -15,12 +20,17 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -40,9 +50,13 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import com.example.audio.SharedPlayerHolder
+import com.example.audio.TaskClearService
 import com.example.data.model.NavDestination
 import com.example.data.model.Track
 import com.example.ui.components.AddToPlaylistDialog
@@ -63,19 +77,95 @@ import com.example.ui.viewmodel.PlayerUiState
 import com.example.ui.viewmodel.PlayerViewModel
 
 class MainActivity : ComponentActivity() {
+    private val openNowPlayingTrigger = MutableStateFlow(0)
+    private val activityShutdownHook: () -> Unit = {
+        runOnUiThread {
+            runCatching { finishAndRemoveTask() }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            CadenceApp()
+        SharedPlayerHolder.registerShutdownHook(activityShutdownHook)
+        runCatching {
+            startService(Intent(applicationContext, TaskClearService::class.java))
         }
+        handleNotificationIntent(intent)
+        setContent {
+            val openSignal by openNowPlayingTrigger.collectAsStateWithLifecycle()
+            CadenceApp(openNowPlayingSignal = openSignal)
+        }
+    }
+
+    override fun onDestroy() {
+        SharedPlayerHolder.unregisterShutdownHook(activityShutdownHook)
+        super.onDestroy()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotificationIntent(intent)
+    }
+
+    private fun handleNotificationIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_NOW_PLAYING, false) == true) {
+            openNowPlayingTrigger.value += 1
+            intent.removeExtra(EXTRA_OPEN_NOW_PLAYING)
+        }
+    }
+
+    companion object {
+        const val EXTRA_OPEN_NOW_PLAYING = "com.example.OPEN_NOW_PLAYING"
     }
 }
 
 @Composable
-fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
+fun CadenceApp(
+    openNowPlayingSignal: Int = 0,
+    viewModel: PlayerViewModel = viewModel()
+) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted && uiState.playback.isPlaying) {
+            runCatching {
+                val refreshIntent = Intent(context.applicationContext, com.example.audio.PlaybackService::class.java).apply {
+                    action = com.example.audio.PlaybackService.ACTION_REFRESH_NOTIFICATION
+                }
+                context.applicationContext.startService(refreshIntent)
+            }
+        }
+    }
+
+    var notificationPermissionRequested by remember { mutableStateOf(false) }
+
+    // Request POST_NOTIFICATIONS on Android 13+ so the live media player notification displays in the shade
+    LaunchedEffect(uiState.playback.isPlaying) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationPermissionRequested) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                notificationPermissionRequested = true
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                notificationPermissionRequested = true
+            }
+        }
+    }
+
+    LaunchedEffect(openNowPlayingSignal) {
+        if (openNowPlayingSignal > 0 && uiState.playback.currentTrack != null) {
+            viewModel.openNowPlaying()
+        }
+    }
 
     // Zero-permission Storage Access Framework multi-audio importer
     val audioPickerLauncher = rememberLauncherForActivityResult(
@@ -86,24 +176,26 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
         }
     }
 
-    val launchAudioImport = {
-        audioPickerLauncher.launch(
-            arrayOf(
-                "audio/mpeg",
-                "audio/wav",
-                "audio/x-wav",
-                "audio/mp4",
-                "audio/aac",
-                "audio/flac",
-                "audio/ogg",
-                "audio/eac3",
-                "audio/eac3-joc",
-                "audio/ac4",
-                "audio/ac3",
-                "video/mp4",
-                "audio/*"
+    val launchAudioImport = remember(audioPickerLauncher) {
+        {
+            audioPickerLauncher.launch(
+                arrayOf(
+                    "audio/mpeg",
+                    "audio/wav",
+                    "audio/x-wav",
+                    "audio/mp4",
+                    "audio/aac",
+                    "audio/flac",
+                    "audio/ogg",
+                    "audio/eac3",
+                    "audio/eac3-joc",
+                    "audio/ac4",
+                    "audio/ac3",
+                    "video/mp4",
+                    "audio/*"
+                )
             )
-        )
+        }
     }
 
     var trackForPlaylistDialog by remember { mutableStateOf<Track?>(null) }
@@ -184,8 +276,9 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                 }
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val isExpandedDesktop = maxWidth >= 900.dp
-                val isMediumTablet = maxWidth in 600.dp..899.dp
+                val isCompactHeight = maxHeight < 520.dp
+                val isExpandedDesktop = maxWidth >= 900.dp && !isCompactHeight
+                val useNavRail = !isExpandedDesktop && (maxWidth >= 600.dp || (maxWidth > maxHeight && maxWidth >= 480.dp))
 
                 val activeContent: @Composable (Modifier) -> Unit = { contentMod ->
                     ActiveDestinationContent(
@@ -232,6 +325,7 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                             VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                             NowPlayingScreen(
                                 playback = uiState.playback,
+                                playbackProgress = viewModel.playbackProgress,
                                 spatialAudio = uiState.spatialAudio,
                                 sleepTimer = uiState.sleepTimer,
                                 isSidePanel = true,
@@ -242,8 +336,6 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                                 onSeekTo = viewModel::seekTo,
                                 onToggleShuffle = viewModel::toggleShuffle,
                                 onCycleRepeat = viewModel::cycleRepeatMode,
-                                onVolumeChange = viewModel::setVolume,
-                                onToggleMute = viewModel::toggleMute,
                                 onSpeedChange = viewModel::setPlaybackSpeed,
                                 onToggleFavorite = viewModel::toggleFavorite,
                                 onOpenSleepTimer = { showSleepTimerDialog = true },
@@ -259,8 +351,8 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                             )
                         }
                     }
-                } else if (isMediumTablet) {
-                    // Tablet Layout: Left NavigationRail + Main Content + Floating MiniPlayer
+                } else if (useNavRail) {
+                    // Landscape Phone & Medium Tablet Layout: Left NavigationRail + Main Content + Floating Compact MiniPlayer
                     Scaffold(
                         snackbarHost = { SnackbarHost(snackbarHostState) },
                         contentWindowInsets = WindowInsets(0, 0, 0, 0)
@@ -273,12 +365,15 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                             AppNavRail(
                                 activeDestination = uiState.activeDestination,
                                 onSelect = viewModel::selectDestination,
-                                onImportClick = launchAudioImport
+                                onImportClick = launchAudioImport,
+                                compactHeight = isCompactHeight
                             )
+                            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight()
+                                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End))
                             ) {
                                 activeContent(Modifier.fillMaxSize())
                                 val currentTrack = uiState.playback.currentTrack
@@ -286,15 +381,17 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                                     MiniPlayer(
                                         track = currentTrack,
                                         isPlaying = uiState.playback.isPlaying,
-                                        positionMs = uiState.playback.positionMs,
+                                        progressFlow = viewModel.playbackProgress,
                                         durationMs = uiState.playback.durationMs,
                                         onExpand = viewModel::openNowPlaying,
                                         onTogglePlayPause = viewModel::togglePlayPause,
                                         onNext = viewModel::nextTrack,
+                                        compact = isCompactHeight,
                                         modifier = Modifier
                                             .align(Alignment.BottomCenter)
+                                            .widthIn(max = 560.dp)
                                             .navigationBarsPadding()
-                                            .padding(bottom = 8.dp)
+                                            .padding(bottom = if (isCompactHeight) 4.dp else 8.dp)
                                     )
                                 }
                             }
@@ -312,7 +409,7 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                                     MiniPlayer(
                                         track = currentTrack,
                                         isPlaying = uiState.playback.isPlaying,
-                                        positionMs = uiState.playback.positionMs,
+                                        progressFlow = viewModel.playbackProgress,
                                         durationMs = uiState.playback.durationMs,
                                         onExpand = viewModel::openNowPlaying,
                                         onTogglePlayPause = viewModel::togglePlayPause,
@@ -343,6 +440,7 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                     ) {
                         NowPlayingScreen(
                             playback = uiState.playback,
+                            playbackProgress = viewModel.playbackProgress,
                             spatialAudio = uiState.spatialAudio,
                             sleepTimer = uiState.sleepTimer,
                             isSidePanel = false,
@@ -353,8 +451,6 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                             onSeekTo = viewModel::seekTo,
                             onToggleShuffle = viewModel::toggleShuffle,
                             onCycleRepeat = viewModel::cycleRepeatMode,
-                            onVolumeChange = viewModel::setVolume,
-                            onToggleMute = viewModel::toggleMute,
                             onSpeedChange = viewModel::setPlaybackSpeed,
                             onToggleFavorite = viewModel::toggleFavorite,
                             onOpenSleepTimer = { showSleepTimerDialog = true },
@@ -426,6 +522,7 @@ private fun ActiveDestinationContent(
     when (uiState.activeDestination) {
         NavDestination.HOME -> HomeScreen(
             uiState = uiState,
+            playbackProgress = viewModel.playbackProgress,
             onSearchChange = viewModel::updateSearchQuery,
             onImportClick = onImportClick,
             onGenerateSamplesClick = viewModel::generateLocalDemoTracks,

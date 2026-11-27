@@ -75,7 +75,7 @@ fun QueuePanel(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         itemsIndexed(queue, key = { idx, track -> "${track.id}_$idx" }) { index, track ->
@@ -120,13 +120,6 @@ fun QueuePanel(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    if (isCurrent) {
-                        PlayingWaveformBars(
-                            isPlaying = isPlaying,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 6.dp)
                         )
                     }
                     IconButton(

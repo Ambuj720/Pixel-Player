@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
@@ -136,8 +138,8 @@ fun PlaybackControls(
         label = "play_scale"
     )
 
-    val playSize = if (compact) 62.dp else 76.dp
-    val skipSize = if (compact) 48.dp else 56.dp
+    val playSize = if (compact) 60.dp else 70.dp
+    val skipSize = if (compact) 48.dp else 52.dp
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -164,7 +166,7 @@ fun PlaybackControls(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface
             ),
-            shape = RoundedCornerShape(20.dp),
+            shape = CircleShape,
             modifier = Modifier
                 .size(skipSize)
                 .testTag("previous_button")
@@ -172,7 +174,7 @@ fun PlaybackControls(
             Icon(
                 imageVector = Icons.Rounded.SkipPrevious,
                 contentDescription = "Previous track",
-                modifier = Modifier.size(if (compact) 26.dp else 30.dp)
+                modifier = Modifier.size(if (compact) 24.dp else 28.dp)
             )
         }
 
@@ -192,7 +194,7 @@ fun PlaybackControls(
                 Icon(
                     imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
-                    modifier = Modifier.size(if (compact) 32.dp else 38.dp)
+                    modifier = Modifier.size(if (compact) 30.dp else 36.dp)
                 )
             }
         }
@@ -203,7 +205,7 @@ fun PlaybackControls(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface
             ),
-            shape = RoundedCornerShape(20.dp),
+            shape = CircleShape,
             modifier = Modifier
                 .size(skipSize)
                 .testTag("next_button")
@@ -211,7 +213,7 @@ fun PlaybackControls(
             Icon(
                 imageVector = Icons.Rounded.SkipNext,
                 contentDescription = "Next track",
-                modifier = Modifier.size(if (compact) 26.dp else 30.dp)
+                modifier = Modifier.size(if (compact) 24.dp else 28.dp)
             )
         }
 
@@ -243,38 +245,47 @@ fun VolumeControlRow(
     onToggleMute: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
+        shape = CircleShape,
+        tonalElevation = 1.dp,
+        modifier = modifier.fillMaxWidth()
     ) {
-        IconButton(
-            onClick = onToggleMute,
+        Row(
             modifier = Modifier
-                .size(48.dp)
-                .testTag("mute_button")
+                .fillMaxWidth()
+                .padding(start = 4.dp, end = 14.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = if (isMuted || volume == 0f) Icons.AutoMirrored.Rounded.VolumeOff
-                else Icons.AutoMirrored.Rounded.VolumeUp,
-                contentDescription = if (isMuted) "Unmute" else "Mute",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            IconButton(
+                onClick = onToggleMute,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("mute_button")
+            ) {
+                Icon(
+                    imageVector = if (isMuted || volume == 0f) Icons.AutoMirrored.Rounded.VolumeOff
+                    else Icons.AutoMirrored.Rounded.VolumeUp,
+                    contentDescription = if (isMuted) "Unmute" else "Mute",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Slider(
+                value = volume,
+                onValueChange = onVolumeChange,
+                valueRange = 0f..1f,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("volume_slider")
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "${(volume * 100).toInt()}%",
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(34.dp)
             )
         }
-        Spacer(modifier = Modifier.width(4.dp))
-        Slider(
-            value = volume,
-            onValueChange = onVolumeChange,
-            valueRange = 0f..1f,
-            modifier = Modifier
-                .weight(1f)
-                .testTag("volume_slider")
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = "${(volume * 100).toInt()}%",
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(36.dp)
-        )
     }
 }

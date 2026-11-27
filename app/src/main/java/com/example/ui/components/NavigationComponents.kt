@@ -8,17 +8,24 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Home
@@ -32,15 +39,16 @@ import androidx.compose.material.icons.outlined.QueueMusic
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AudioFile
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,32 +84,59 @@ fun AppBottomNavigation(
     onSelect: (NavDestination) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        windowInsets = WindowInsets.navigationBars,
-        tonalElevation = 3.dp,
-        modifier = modifier
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 2.dp,
+        modifier = modifier.fillMaxWidth()
     ) {
-        primaryNavItems.forEach { item ->
-            val selected = activeDestination == item.destination
-            NavigationBarItem(
-                selected = selected,
-                onClick = { onSelect(item.destination) },
-                icon = {
-                    Icon(
-                        imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                        contentDescription = item.label
-                    )
-                },
-                label = {
-                    Text(
-                        text = item.label,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                modifier = Modifier.testTag("bottom_nav_${item.destination.route}")
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+        ) {
+            HorizontalDivider(
+                thickness = 0.75.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                windowInsets = WindowInsets(0, 0, 0, 0),
+                tonalElevation = 0.dp,
+                modifier = Modifier.height(68.dp)
+            ) {
+                primaryNavItems.forEach { item ->
+                    val selected = activeDestination == item.destination
+                    NavigationBarItem(
+                        selected = selected,
+                        onClick = { onSelect(item.destination) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                            indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        icon = {
+                            Icon(
+                                imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                                contentDescription = item.label,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = item.label,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        modifier = Modifier.testTag("bottom_nav_${item.destination.route}")
+                    )
+                }
+            }
         }
     }
 }
@@ -111,43 +146,100 @@ fun AppNavRail(
     activeDestination: NavDestination,
     onSelect: (NavDestination) -> Unit,
     onImportClick: () -> Unit,
+    compactHeight: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     NavigationRail(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        header = {
-            Surface(
-                onClick = onImportClick,
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier
-                    .padding(top = 12.dp, bottom = 8.dp)
-                    .size(52.dp)
-                    .testTag("rail_import_button")
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Add, contentDescription = "Import audio files")
+        windowInsets = WindowInsets(0, 0, 0, 0),
+        header = if (!compactHeight) {
+            {
+                Surface(
+                    onClick = onImportClick,
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier
+                        .padding(top = 12.dp, bottom = 8.dp)
+                        .size(48.dp)
+                        .testTag("rail_import_button")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Import audio files",
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
-        },
-        modifier = modifier.fillMaxHeight()
+        } else null,
+        modifier = modifier
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical))
     ) {
-        Spacer(modifier = Modifier.height(8.dp))
-        primaryNavItems.forEach { item ->
-            val selected = activeDestination == item.destination
-            NavigationRailItem(
-                selected = selected,
-                onClick = { onSelect(item.destination) },
-                icon = {
-                    Icon(
-                        imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                        contentDescription = item.label
-                    )
-                },
-                label = { Text(item.label, maxLines = 1) },
-                modifier = Modifier.testTag("rail_nav_${item.destination.route}")
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = if (compactHeight) 6.dp else 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = if (compactHeight) Arrangement.spacedBy(2.dp, Alignment.CenterVertically)
+            else Arrangement.spacedBy(4.dp)
+        ) {
+            if (compactHeight) {
+                Surface(
+                    onClick = onImportClick,
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier
+                        .padding(bottom = 4.dp)
+                        .size(48.dp)
+                        .testTag("rail_import_button")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Import audio files",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+            primaryNavItems.forEach { item ->
+                val selected = activeDestination == item.destination
+                NavigationRailItem(
+                    selected = selected,
+                    onClick = { onSelect(item.destination) },
+                    alwaysShowLabel = !compactHeight,
+                    colors = NavigationRailItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    icon = {
+                        Icon(
+                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                            contentDescription = item.label,
+                            modifier = Modifier.size(if (compactHeight) 20.dp else 22.dp)
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    },
+                    modifier = Modifier.testTag("rail_nav_${item.destination.route}")
+                )
+            }
         }
     }
 }
@@ -172,6 +264,7 @@ fun AppSidebar(
             modifier = Modifier
                 .fillMaxHeight()
                 .statusBarsPadding()
+                .navigationBarsPadding()
                 .padding(horizontal = 14.dp, vertical = 16.dp)
         ) {
             Row(
@@ -209,7 +302,7 @@ fun AppSidebar(
 
             FilledTonalButton(
                 onClick = onImportClick,
-                shape = RoundedCornerShape(18.dp),
+                shape = CircleShape,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
@@ -217,7 +310,12 @@ fun AppSidebar(
             ) {
                 Icon(Icons.Rounded.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Import Music")
+                Text(
+                    text = "Import Music",
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -279,13 +377,13 @@ private fun SidebarRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(CircleShape)
             .background(
                 if (selected) MaterialTheme.colorScheme.secondaryContainer
                 else MaterialTheme.colorScheme.surfaceContainerLow
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp)
+            .padding(horizontal = 16.dp)
             .testTag(testTag)
     ) {
         Icon(

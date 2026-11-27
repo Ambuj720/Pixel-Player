@@ -1,9 +1,18 @@
 package com.example.audio
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
 import android.net.Uri
+import android.util.LruCache
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -14,13 +23,17 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import com.example.data.model.ActiveAudioFormat
 import com.example.data.model.RepeatMode
 import com.example.data.model.Track
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,15 +41,20 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 import java.io.File
+
+data class PlaybackProgress(
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val bufferedPositionMs: Long = 0L
+)
 
 data class PlaybackState(
     val queue: List<Track> = emptyList(),
     val currentIndex: Int = -1,
     val isPlaying: Boolean = false,
-    val positionMs: Long = 0L,
     val durationMs: Long = 0L,
-    val bufferedPositionMs: Long = 0L,
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val playbackSpeed: Float = 1.0f,
@@ -59,6 +77,9 @@ class AudioEngine(private val context: Context) {
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
 
+    private val _playbackProgress = MutableStateFlow(PlaybackProgress())
+    val playbackProgress: StateFlow<PlaybackProgress> = _playbackProgress.asStateFlow()
+
     var onTrackStarted: ((Track) -> Unit)? = null
     var onSessionCheckpoint: ((trackId: String?, positionMs: Long, queueIds: List<String>) -> Unit)? = null
 
@@ -66,6 +87,12 @@ class AudioEngine(private val context: Context) {
     private var preMuteVolume: Float = 0.85f
     private var serviceStarted = false
     private var lastRecordedTrackId: String? = null
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+
+    // Bounded in-memory cache (max 256 KB) keyed by seed color so tracks sharing a palette reuse 1 tiny JPEG
+    private val fallbackArtworkCache = object : LruCache<Int, ByteArray>(256 * 1024) {
+        override fun sizeOf(key: Int, value: ByteArray): Int = value.size
+    }
 
     private val playerListener = object : Player.Listener {
         @OptIn(UnstableApi::class)
@@ -97,14 +124,19 @@ class AudioEngine(private val context: Context) {
             val dur = exoPlayer.duration.takeIf { it > 0 }
                 ?: _playbackState.value.queue.getOrNull(idx)?.durationMs
                 ?: 0L
+            val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
             _playbackState.update {
                 it.copy(
                     currentIndex = idx,
-                    positionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
                     durationMs = dur,
                     errorMessage = null
                 )
             }
+            _playbackProgress.value = PlaybackProgress(
+                positionMs = pos,
+                durationMs = dur,
+                bufferedPositionMs = exoPlayer.bufferedPosition.coerceAtLeast(0L)
+            )
             val track = _playbackState.value.queue.getOrNull(idx)
             if (track != null && track.id != lastRecordedTrackId) {
                 lastRecordedTrackId = track.id
@@ -119,8 +151,11 @@ class AudioEngine(private val context: Context) {
                     ?: _playbackState.value.currentTrack?.durationMs
                     ?: 0L
                 _playbackState.update { it.copy(durationMs = dur) }
+                _playbackProgress.update { it.copy(durationMs = dur) }
             } else if (playbackState == Player.STATE_ENDED) {
-                _playbackState.update { it.copy(isPlaying = false, positionMs = it.durationMs) }
+                val dur = _playbackState.value.durationMs
+                _playbackState.update { it.copy(isPlaying = false) }
+                _playbackProgress.update { it.copy(positionMs = dur, durationMs = dur) }
             }
         }
 
@@ -135,6 +170,8 @@ class AudioEngine(private val context: Context) {
         }
     }
 
+    private val shutdownHook: () -> Unit = { releaseListener() }
+
     init {
         exoPlayer.addListener(playerListener)
         @OptIn(UnstableApi::class)
@@ -142,6 +179,25 @@ class AudioEngine(private val context: Context) {
         if (initialSession != 0) {
             equalizerController.attachToSession(initialSession)
             spatialAudioController.attachToSession(initialSession)
+        }
+        SharedPlayerHolder.registerShutdownHook(shutdownHook)
+        connectMediaSessionService()
+    }
+
+    private fun connectMediaSessionService() {
+        if (controllerFuture != null) return
+        runCatching {
+            val appContext = context.applicationContext
+            val sessionToken = SessionToken(
+                appContext,
+                ComponentName(appContext, PlaybackService::class.java)
+            )
+            val future = MediaController.Builder(appContext, sessionToken).buildAsync()
+            controllerFuture = future
+            future.addListener(
+                { runCatching { future.get() } },
+                ContextCompat.getMainExecutor(appContext)
+            )
         }
     }
 
@@ -199,15 +255,20 @@ class AudioEngine(private val context: Context) {
         val safeIndex = startIndex.coerceIn(0, tracks.lastIndex)
         val mediaItems = tracks.map { it.toMediaItem() }
 
+        val startDuration = tracks[safeIndex].durationMs
         _playbackState.update {
             it.copy(
                 queue = tracks,
                 currentIndex = safeIndex,
-                positionMs = startPositionMs,
-                durationMs = tracks[safeIndex].durationMs,
+                durationMs = startDuration,
                 errorMessage = null
             )
         }
+        _playbackProgress.value = PlaybackProgress(
+            positionMs = startPositionMs,
+            durationMs = startDuration,
+            bufferedPositionMs = startPositionMs
+        )
 
         exoPlayer.setMediaItems(mediaItems, safeIndex, startPositionMs)
         exoPlayer.prepare()
@@ -276,9 +337,10 @@ class AudioEngine(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
-        val clamped = positionMs.coerceIn(0L, _playbackState.value.durationMs.coerceAtLeast(1L))
+        val dur = _playbackState.value.durationMs.coerceAtLeast(1L)
+        val clamped = positionMs.coerceIn(0L, dur)
         exoPlayer.seekTo(clamped)
-        _playbackState.update { it.copy(positionMs = clamped) }
+        _playbackProgress.update { it.copy(positionMs = clamped, durationMs = dur) }
     }
 
     fun seekBy(deltaMs: Long) {
@@ -403,14 +465,15 @@ class AudioEngine(private val context: Context) {
                 val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
                 val dur = exoPlayer.duration.takeIf { it > 0 } ?: _playbackState.value.durationMs
                 val buf = exoPlayer.bufferedPosition.coerceAtLeast(0L)
-                _playbackState.update {
-                    it.copy(positionMs = pos, durationMs = dur, bufferedPositionMs = buf)
+                val next = PlaybackProgress(positionMs = pos, durationMs = dur, bufferedPositionMs = buf)
+                if (_playbackProgress.value != next) {
+                    _playbackProgress.value = next
                 }
                 tickCounter++
-                if (tickCounter % 20 == 0) {
+                if (tickCounter % 16 == 0) {
                     emitCheckpoint()
                 }
-                delay(180L)
+                delay(250L)
             }
         }
     }
@@ -424,12 +487,13 @@ class AudioEngine(private val context: Context) {
         val st = _playbackState.value
         onSessionCheckpoint?.invoke(
             st.currentTrack?.id,
-            st.positionMs,
+            _playbackProgress.value.positionMs,
             st.queue.map { it.id }
         )
     }
 
     private fun startServiceIfNeeded() {
+        connectMediaSessionService()
         if (serviceStarted) return
         serviceStarted = true
         runCatching {
@@ -441,15 +505,23 @@ class AudioEngine(private val context: Context) {
     private fun Track.toMediaItem(): MediaItem {
         val metaBuilder = MediaMetadata.Builder()
             .setTitle(title)
+            .setDisplayTitle(title)
+            .setSubtitle(artist)
             .setArtist(artist)
             .setAlbumTitle(album)
             .setGenre(genre)
+            .setIsPlayable(true)
+
         if (!artworkPath.isNullOrBlank()) {
-            val artFile = File(artworkPath)
-            if (artFile.exists()) {
-                metaBuilder.setArtworkUri(Uri.fromFile(artFile))
+            // Zero-copy URI reference: Media3 loads off main thread without copying cover bytes into RAM
+            metaBuilder.setArtworkUri(Uri.fromFile(File(artworkPath)))
+        } else {
+            val fallbackBytes = resolveFallbackArtworkBytes(artworkSeedColor)
+            if (fallbackBytes != null) {
+                metaBuilder.setArtworkData(fallbackBytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
             }
         }
+
         return MediaItem.Builder()
             .setMediaId(id)
             .setUri(Uri.parse(uriString))
@@ -457,10 +529,58 @@ class AudioEngine(private val context: Context) {
             .build()
     }
 
+    private fun resolveFallbackArtworkBytes(seedColor: Long?): ByteArray? {
+        val seed = (seedColor ?: 0xFF5B6CFFL).toInt()
+        fallbackArtworkCache.get(seed)?.let { return it }
+
+        val bytes = generateFallbackArtworkBytes(seed)
+        if (bytes != null) {
+            fallbackArtworkCache.put(seed, bytes)
+        }
+        return bytes
+    }
+
+    private fun generateFallbackArtworkBytes(seed: Int): ByteArray? = runCatching {
+        val size = 128
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
+        val canvas = Canvas(bmp)
+
+        val hsv = FloatArray(3)
+        Color.colorToHSV(seed, hsv)
+        val startColor = Color.HSVToColor(floatArrayOf(hsv[0], (hsv[1] * 0.85f).coerceIn(0.35f, 0.9f), 0.78f))
+        val endColor = Color.HSVToColor(floatArrayOf((hsv[0] + 38f) % 360f, (hsv[1] * 0.9f).coerceIn(0.4f, 0.95f), 0.34f))
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                0f, 0f, size.toFloat(), size.toFloat(),
+                startColor, endColor, Shader.TileMode.CLAMP
+            )
+        }
+        canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), bgPaint)
+
+        val glyphPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(215, 255, 255, 255)
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(size * 0.42f, size * 0.66f, size * 0.11f, glyphPaint)
+        canvas.drawRect(size * 0.48f, size * 0.28f, size * 0.55f, size * 0.66f, glyphPaint)
+        canvas.drawRect(size * 0.48f, size * 0.28f, size * 0.68f, size * 0.36f, glyphPaint)
+
+        val out = ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.JPEG, 76, out)
+        bmp.recycle()
+        out.toByteArray()
+    }.getOrNull()
+
     fun releaseListener() {
+        SharedPlayerHolder.unregisterShutdownHook(shutdownHook)
         stopPositionTicker()
-        exoPlayer.removeListener(playerListener)
-        equalizerController.release()
-        spatialAudioController.release()
+        runCatching { exoPlayer.removeListener(playerListener) }
+        controllerFuture?.let { runCatching { MediaController.releaseFuture(it) } }
+        controllerFuture = null
+        fallbackArtworkCache.evictAll()
+        runCatching { equalizerController.release() }
+        runCatching { spatialAudioController.release() }
+        scope.cancel()
     }
 }

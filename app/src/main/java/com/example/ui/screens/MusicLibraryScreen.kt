@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
@@ -95,132 +97,321 @@ fun MusicLibraryScreen(
     val filters = uiState.filters
     val currentTrackId = uiState.playback.currentTrack?.id
 
-    Column(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding()
     ) {
-        // Header row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Music Library",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "${uiState.filteredTracks.size} tracks shown • ${uiState.tracks.size} total",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        val isShortLandscape = maxWidth >= 560.dp && maxHeight < 480.dp
+        val listBottomPad = if (isShortLandscape) 80.dp else 120.dp
 
-            IconButton(
-                onClick = onToggleGridView,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("toggle_grid_button")
-            ) {
-                Icon(
-                    imageVector = if (filters.isGridView) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
-                    contentDescription = if (filters.isGridView) "Switch to list view" else "Switch to grid view"
-                )
-            }
-
-            Box {
-                IconButton(
-                    onClick = { sortMenuOpen = true },
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (isShortLandscape) {
+                // Compact single-row landscape toolbar: Title + Search + Grid/Sort/Add
+                Row(
                     modifier = Modifier
-                        .size(48.dp)
-                        .testTag("sort_menu_button")
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 12.dp, top = 6.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = "Sort tracks")
-                }
-                DropdownMenu(
-                    expanded = sortMenuOpen,
-                    onDismissRequest = { sortMenuOpen = false }
-                ) {
-                    SortOption.entries.forEach { opt ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = opt.label,
-                                    fontWeight = if (filters.sortOption == opt) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (filters.sortOption == opt) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            onClick = {
-                                sortMenuOpen = false
-                                onSortSelected(opt)
+                    Column {
+                        Text(
+                            text = "Library",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "${uiState.filteredTracks.size}/${uiState.tracks.size}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = filters.searchQuery,
+                        onValueChange = onSearchChange,
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        placeholder = {
+                            Text(
+                                text = "Filter library…",
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = {
+                            if (filters.searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { onSearchChange("") }) {
+                                    Icon(Icons.Rounded.Clear, contentDescription = "Clear search", modifier = Modifier.size(18.dp))
+                                }
                             }
+                        },
+                        singleLine = true,
+                        shape = CircleShape,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            unfocusedBorderColor = Color.Transparent
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("library_search_input")
+                    )
+
+                    IconButton(
+                        onClick = onToggleGridView,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("toggle_grid_button")
+                    ) {
+                        Icon(
+                            imageVector = if (filters.isGridView) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
+                            contentDescription = if (filters.isGridView) "Switch to list view" else "Switch to grid view"
+                        )
+                    }
+
+                    Box {
+                        IconButton(
+                            onClick = { sortMenuOpen = true },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("sort_menu_button")
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = "Sort tracks")
+                        }
+                        DropdownMenu(
+                            expanded = sortMenuOpen,
+                            onDismissRequest = { sortMenuOpen = false }
+                        ) {
+                            SortOption.entries.forEach { opt ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = opt.label,
+                                            fontWeight = if (filters.sortOption == opt) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (filters.sortOption == opt) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    onClick = {
+                                        sortMenuOpen = false
+                                        onSortSelected(opt)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    FilledTonalButton(
+                        onClick = onImportClick,
+                        shape = CircleShape,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .height(48.dp)
+                            .testTag("library_import_button")
+                    ) {
+                        Icon(Icons.Rounded.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "Add", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    }
+                }
+
+                // Segmented tabs + inline Play All / Shuffle on one compact row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.weight(1f)) {
+                        LibraryTab.entries.forEachIndexed { index, tab ->
+                            SegmentedButton(
+                                selected = filters.activeTab == tab,
+                                onClick = { onTabSelected(tab) },
+                                shape = SegmentedButtonDefaults.itemShape(index, LibraryTab.entries.size),
+                                modifier = Modifier.testTag("library_tab_${tab.name.lowercase()}")
+                            ) {
+                                Text(tab.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    if ((filters.activeTab == LibraryTab.SONGS || filters.activeTab == LibraryTab.FAVORITES) &&
+                        uiState.filteredTracks.isNotEmpty()
+                    ) {
+                        Button(
+                            onClick = { onPlayAll(uiState.filteredTracks, false) },
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("library_play_all_button")
+                        ) {
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Play", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        }
+                        FilledTonalButton(
+                            onClick = { onPlayAll(uiState.filteredTracks, true) },
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("library_shuffle_button")
+                        ) {
+                            Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Shuffle", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        }
+                    }
+                }
+            } else {
+                // Standard portrait / tall tablet header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 16.dp, top = 14.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Music Library",
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${uiState.filteredTracks.size} tracks shown • ${uiState.tracks.size} total",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onToggleGridView,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("toggle_grid_button")
+                    ) {
+                        Icon(
+                            imageVector = if (filters.isGridView) Icons.AutoMirrored.Rounded.ViewList else Icons.Rounded.GridView,
+                            contentDescription = if (filters.isGridView) "Switch to list view" else "Switch to grid view"
+                        )
+                    }
+
+                    Box {
+                        IconButton(
+                            onClick = { sortMenuOpen = true },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("sort_menu_button")
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = "Sort tracks")
+                        }
+                        DropdownMenu(
+                            expanded = sortMenuOpen,
+                            onDismissRequest = { sortMenuOpen = false }
+                        ) {
+                            SortOption.entries.forEach { opt ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = opt.label,
+                                            fontWeight = if (filters.sortOption == opt) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (filters.sortOption == opt) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    onClick = {
+                                        sortMenuOpen = false
+                                        onSortSelected(opt)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    FilledTonalButton(
+                        onClick = onImportClick,
+                        shape = CircleShape,
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .height(48.dp)
+                            .testTag("library_import_button")
+                    ) {
+                        Icon(Icons.Rounded.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Add",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1
                         )
                     }
                 }
-            }
 
-            FilledTonalButton(
-                onClick = onImportClick,
-                shape = RoundedCornerShape(18.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                modifier = Modifier.testTag("library_import_button")
-            ) {
-                Icon(Icons.Rounded.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Add")
-            }
-        }
+                // Search bar
+                OutlinedTextField(
+                    value = filters.searchQuery,
+                    onValueChange = onSearchChange,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    placeholder = {
+                        Text(
+                            text = "Filter by title, artist, album, or genre…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                    trailingIcon = {
+                        if (filters.searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { onSearchChange("") }) {
+                                Icon(Icons.Rounded.Clear, contentDescription = "Clear search")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = CircleShape,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 4.dp)
+                        .testTag("library_search_input")
+                )
 
-        // Search bar
-        OutlinedTextField(
-            value = filters.searchQuery,
-            onValueChange = onSearchChange,
-            placeholder = { Text("Filter by title, artist, album, or genre…") },
-            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-            trailingIcon = {
-                if (filters.searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchChange("") }) {
-                        Icon(Icons.Rounded.Clear, contentDescription = "Clear search")
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Segmented tabs: Songs / Albums / Artists / Favorites
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                ) {
+                    LibraryTab.entries.forEachIndexed { index, tab ->
+                        SegmentedButton(
+                            selected = filters.activeTab == tab,
+                            onClick = { onTabSelected(tab) },
+                            shape = SegmentedButtonDefaults.itemShape(index, LibraryTab.entries.size),
+                            modifier = Modifier.testTag("library_tab_${tab.name.lowercase()}")
+                        ) {
+                            Text(tab.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(26.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                unfocusedBorderColor = Color.Transparent
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 4.dp)
-                .testTag("library_search_input")
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // Segmented tabs: Songs / Albums / Artists / Favorites
-        SingleChoiceSegmentedButtonRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-        ) {
-            LibraryTab.entries.forEachIndexed { index, tab ->
-                SegmentedButton(
-                    selected = filters.activeTab == tab,
-                    onClick = { onTabSelected(tab) },
-                    shape = SegmentedButtonDefaults.itemShape(index, LibraryTab.entries.size),
-                    modifier = Modifier.testTag("library_tab_${tab.name.lowercase()}")
-                ) {
-                    Text(tab.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
             }
-        }
 
         // Active artist/album filters + genre filter chips
         val hasContextualFilter = filters.selectedArtistFilter != null ||
@@ -275,48 +466,62 @@ fun MusicLibraryScreen(
                         onClearFilters = onClearFilters
                     )
                 } else {
-                    // Play All & Shuffle row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Button(
-                            onClick = { onPlayAll(list, false) },
-                            shape = RoundedCornerShape(18.dp),
+                    // Play All & Shuffle row (shown here in portrait/tablet; inline in compact landscape)
+                    if (!isShortLandscape) {
+                        Row(
                             modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp)
-                                .testTag("library_play_all_button")
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Play All")
-                        }
-                        FilledTonalButton(
-                            onClick = { onPlayAll(list, true) },
-                            shape = RoundedCornerShape(18.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp)
-                                .testTag("library_shuffle_button")
-                        ) {
-                            Icon(Icons.Rounded.Shuffle, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Shuffle")
+                            Button(
+                                onClick = { onPlayAll(list, false) },
+                                shape = CircleShape,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("library_play_all_button")
+                            ) {
+                                Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Play All",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1
+                                )
+                            }
+                            FilledTonalButton(
+                                onClick = { onPlayAll(list, true) },
+                                shape = CircleShape,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("library_shuffle_button")
+                            ) {
+                                Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Shuffle",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
 
                     if (filters.isGridView) {
                         LazyVerticalGrid(
                             columns = GridCells.Adaptive(minSize = 156.dp),
-                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 120.dp),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = listBottomPad),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            items(list, key = { it.id }) { track ->
+                            items(
+                                items = list,
+                                key = { it.id },
+                                contentType = { "track_grid_card" }
+                            ) { track ->
                                 val isCurrent = track.id == currentTrackId
                                 Surface(
                                     color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer
@@ -356,11 +561,15 @@ fun MusicLibraryScreen(
                         }
                     } else {
                         LazyColumn(
-                            contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 120.dp),
+                            contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = listBottomPad),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            items(list, key = { it.id }) { track ->
+                            items(
+                                items = list,
+                                key = { it.id },
+                                contentType = { "song_row" }
+                            ) { track ->
                                 SongRowItem(
                                     track = track,
                                     isCurrentTrack = track.id == currentTrackId,
@@ -379,18 +588,25 @@ fun MusicLibraryScreen(
             }
 
             LibraryTab.ALBUMS -> {
-                val albums = uiState.albums.filter {
-                    val q = filters.searchQuery.trim().lowercase()
-                    q.isEmpty() || it.name.lowercase().contains(q) || it.artist.lowercase().contains(q)
+                val albums = remember(uiState.albums, filters.searchQuery) {
+                    val q = filters.searchQuery.trim()
+                    if (q.isEmpty()) uiState.albums
+                    else uiState.albums.filter {
+                        it.name.contains(q, ignoreCase = true) || it.artist.contains(q, ignoreCase = true)
+                    }
                 }
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 160.dp),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = listBottomPad),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(albums, key = { it.name }) { album ->
+                    items(
+                        items = albums,
+                        key = { it.name },
+                        contentType = { "album_card" }
+                    ) { album ->
                         AlbumCard(
                             album = album,
                             onClick = { onOpenAlbum(album.name) },
@@ -401,18 +617,23 @@ fun MusicLibraryScreen(
             }
 
             LibraryTab.ARTISTS -> {
-                val artists = uiState.artists.filter {
-                    val q = filters.searchQuery.trim().lowercase()
-                    q.isEmpty() || it.name.lowercase().contains(q)
+                val artists = remember(uiState.artists, filters.searchQuery) {
+                    val q = filters.searchQuery.trim()
+                    if (q.isEmpty()) uiState.artists
+                    else uiState.artists.filter { it.name.contains(q, ignoreCase = true) }
                 }
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 152.dp),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = listBottomPad),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(artists, key = { it.name }) { artist ->
+                    items(
+                        items = artists,
+                        key = { it.name },
+                        contentType = { "artist_card" }
+                    ) { artist ->
                         ArtistCard(
                             artist = artist,
                             onClick = { onOpenArtist(artist.name) }
@@ -420,6 +641,7 @@ fun MusicLibraryScreen(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -460,16 +682,28 @@ private fun LibraryEmptyState(
         )
         Spacer(modifier = Modifier.height(18.dp))
         if (hasTracksInLibrary && !isFavoritesTab) {
-            FilledTonalButton(onClick = onClearFilters, shape = RoundedCornerShape(18.dp)) {
-                Text("Clear Filters")
+            FilledTonalButton(
+                onClick = onClearFilters,
+                shape = CircleShape,
+                modifier = Modifier.height(48.dp)
+            ) {
+                Text("Clear Filters", style = MaterialTheme.typography.labelLarge, maxLines = 1)
             }
         } else if (!hasTracksInLibrary) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = onImportClick, shape = RoundedCornerShape(18.dp)) {
-                    Text("Import Audio")
+                Button(
+                    onClick = onImportClick,
+                    shape = CircleShape,
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text("Import Audio", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                 }
-                FilledTonalButton(onClick = onGenerateSamplesClick, shape = RoundedCornerShape(18.dp)) {
-                    Text("Create Demo WAVs")
+                FilledTonalButton(
+                    onClick = onGenerateSamplesClick,
+                    shape = CircleShape,
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Text("Demo WAVs", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                 }
             }
         }

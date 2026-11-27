@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Edit
@@ -40,13 +41,40 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.audio.PlaybackProgress
 import com.example.data.media.MetadataParser
 import com.example.data.model.Track
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+
+private data class IndexedTimestamp(val lineIndex: Int, val timestampMs: Long)
+
+private fun findActiveLyricIndex(
+    synced: List<IndexedTimestamp>,
+    positionMs: Long
+): Int {
+    if (synced.isEmpty()) return -1
+    var low = 0
+    var high = synced.lastIndex
+    var result = -1
+    while (low <= high) {
+        val mid = (low + high) ushr 1
+        if (synced[mid].timestampMs <= positionMs) {
+            result = synced[mid].lineIndex
+            low = mid + 1
+        } else {
+            high = mid - 1
+        }
+    }
+    return result
+}
 
 @Composable
 fun LyricsPanel(
     track: Track?,
-    positionMs: Long,
+    progressFlow: StateFlow<PlaybackProgress>,
     onSeekTo: (Long) -> Unit,
     onSaveLyrics: (trackId: String, lyrics: String) -> Unit,
     modifier: Modifier = Modifier
@@ -54,20 +82,13 @@ fun LyricsPanel(
     if (track == null) return
 
     val lines = remember(track.lyricsText) { MetadataParser.parseLyrics(track.lyricsText) }
-    val hasSyncedTimestamps = remember(lines) { lines.any { it.timestampMs != null } }
-    val activeIndex = remember(lines, positionMs, hasSyncedTimestamps) {
-        if (!hasSyncedTimestamps) -1
-        else lines.indexOfLast { (it.timestampMs ?: Long.MAX_VALUE) <= positionMs }
+    val syncedTimestamps = remember(lines) {
+        lines.mapIndexedNotNull { idx, line ->
+            line.timestampMs?.let { IndexedTimestamp(idx, it) }
+        }.sortedBy { it.timestampMs }
     }
-
-    val listState = rememberLazyListState()
+    val hasSyncedTimestamps = syncedTimestamps.isNotEmpty()
     var showEditDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(activeIndex) {
-        if (activeIndex >= 0 && activeIndex < lines.size) {
-            listState.animateScrollToItem((activeIndex - 1).coerceAtLeast(0))
-        }
-    }
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(
@@ -84,13 +105,13 @@ fun LyricsPanel(
             )
             FilledTonalButton(
                 onClick = { showEditDialog = true },
-                shape = RoundedCornerShape(14.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                shape = CircleShape,
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 modifier = Modifier.testTag("edit_lyrics_button")
             ) {
                 Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(if (lines.isEmpty()) "Add Lyrics" else "Edit")
+                Text(if (lines.isEmpty()) "Add Lyrics" else "Edit", style = MaterialTheme.typography.labelLarge)
             }
         }
 
@@ -121,13 +142,38 @@ fun LyricsPanel(
                 )
             }
         } else {
+            val activeIndex = if (hasSyncedTimestamps) {
+                val activeIndexFlow = remember(syncedTimestamps, progressFlow) {
+                    progressFlow
+                        .map { findActiveLyricIndex(syncedTimestamps, it.positionMs) }
+                        .distinctUntilChanged()
+                }
+                val initialIndex = remember(syncedTimestamps, progressFlow) {
+                    findActiveLyricIndex(syncedTimestamps, progressFlow.value.positionMs)
+                }
+                activeIndexFlow.collectAsStateWithLifecycle(initialValue = initialIndex).value
+            } else {
+                -1
+            }
+
+            val listState = rememberLazyListState()
+            LaunchedEffect(activeIndex) {
+                if (activeIndex >= 0 && activeIndex < lines.size) {
+                    listState.animateScrollToItem((activeIndex - 1).coerceAtLeast(0))
+                }
+            }
+
             LazyColumn(
                 state = listState,
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                itemsIndexed(lines) { index, line ->
+                itemsIndexed(
+                    items = lines,
+                    key = { index, line -> "${index}_${line.timestampMs ?: -1L}" },
+                    contentType = { _, _ -> "lyric_line" }
+                ) { index, line ->
                     val isActive = index == activeIndex
                     val textColor by animateColorAsState(
                         targetValue = when {

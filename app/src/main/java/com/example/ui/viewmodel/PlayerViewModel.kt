@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.audio.AudioEngine
+import com.example.audio.PlaybackProgress
 import com.example.audio.PlaybackState
 import com.example.data.MusicRepository
 import com.example.data.local.UserPreferences
@@ -24,14 +25,16 @@ import com.example.data.model.SortOption
 import com.example.data.model.SpatialAudioState
 import com.example.data.model.ThemeMode
 import com.example.data.model.Track
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -47,8 +50,35 @@ data class LibraryUiFilters(
     val selectedAlbumFilter: String? = null
 )
 
+/**
+ * Precomputed, immutable library snapshot built off the main thread in a single pass
+ * so Compose reads (albums, artists, shelves, track lookup, total duration) are O(1).
+ */
+data class LibrarySnapshot(
+    val tracks: List<Track> = emptyList(),
+    val tracksById: Map<String, Track> = emptyMap(),
+    val recentlyPlayed: List<Track> = emptyList(),
+    val mostPlayed: List<Track> = emptyList(),
+    val recentlyAdded: List<Track> = emptyList(),
+    val favorites: List<Track> = emptyList(),
+    val genres: List<String> = emptyList(),
+    val albums: List<AlbumGroup> = emptyList(),
+    val artists: List<ArtistGroup> = emptyList(),
+    val totalDurationMs: Long = 0L
+)
+
 data class PlayerUiState(
     val tracks: List<Track> = emptyList(),
+    val tracksById: Map<String, Track> = emptyMap(),
+    val recentlyPlayed: List<Track> = emptyList(),
+    val mostPlayed: List<Track> = emptyList(),
+    val recentlyAdded: List<Track> = emptyList(),
+    val favorites: List<Track> = emptyList(),
+    val genres: List<String> = emptyList(),
+    val albums: List<AlbumGroup> = emptyList(),
+    val artists: List<ArtistGroup> = emptyList(),
+    val totalDurationMs: Long = 0L,
+    val filteredTracks: List<Track> = emptyList(),
     val playlists: List<Playlist> = emptyList(),
     val playback: PlaybackState = PlaybackState(),
     val eqState: EqState = EqState(),
@@ -61,76 +91,105 @@ data class PlayerUiState(
     val isNowPlayingExpanded: Boolean = false,
     val isImporting: Boolean = false,
     val statusBanner: String? = null
-) {
-    val tracksById: Map<String, Track>
-        get() = tracks.associateBy { it.id }
+)
 
-    val recentlyPlayed: List<Track>
-        get() = tracks.filter { it.lastPlayedAt != null }.sortedByDescending { it.lastPlayedAt }.take(12)
+private fun buildLibrarySnapshot(tracks: List<Track>): LibrarySnapshot {
+    if (tracks.isEmpty()) return LibrarySnapshot()
 
-    val mostPlayed: List<Track>
-        get() = tracks.filter { it.playCount > 0 }.sortedByDescending { it.playCount }.take(12)
+    val tracksById = HashMap<String, Track>(tracks.size * 2)
+    val favorites = ArrayList<Track>()
+    val playedTracks = ArrayList<Track>()
+    val countedTracks = ArrayList<Track>()
+    val genreSet = HashSet<String>()
+    val albumBuckets = LinkedHashMap<String, ArrayList<Track>>()
+    val artistBuckets = LinkedHashMap<String, ArrayList<Track>>()
+    var totalDuration = 0L
 
-    val recentlyAdded: List<Track>
-        get() = tracks.sortedByDescending { it.dateAdded }.take(12)
+    for (track in tracks) {
+        tracksById[track.id] = track
+        totalDuration += track.durationMs
+        if (track.isFavorite) favorites.add(track)
+        if (track.lastPlayedAt != null) playedTracks.add(track)
+        if (track.playCount > 0) countedTracks.add(track)
+        genreSet.add(track.genre)
+        albumBuckets.getOrPut(track.album) { ArrayList() }.add(track)
+        artistBuckets.getOrPut(track.artist) { ArrayList() }.add(track)
+    }
 
-    val favorites: List<Track>
-        get() = tracks.filter { it.isFavorite }
+    val recentlyPlayed = playedTracks.sortedByDescending { it.lastPlayedAt }.take(12)
+    val mostPlayed = countedTracks.sortedByDescending { it.playCount }.take(12)
+    val recentlyAdded = tracks.sortedByDescending { it.dateAdded }.take(12)
+    val genres = genreSet.sorted()
 
-    val genres: List<String>
-        get() = tracks.map { it.genre }.distinct().sorted()
+    val albums = albumBuckets.entries.map { (albumName, albumTracks) ->
+        val lead = albumTracks[0]
+        AlbumGroup(
+            name = albumName,
+            artist = lead.artist,
+            artworkPath = albumTracks.firstNotNullOfOrNull { it.artworkPath },
+            seedColor = albumTracks.firstNotNullOfOrNull { it.artworkSeedColor },
+            tracks = albumTracks
+        )
+    }.sortedBy { it.name.lowercase() }
 
-    val albums: List<AlbumGroup>
-        get() = tracks.groupBy { it.album }
-            .map { (albumName, albumTracks) ->
-                val lead = albumTracks.first()
-                AlbumGroup(
-                    name = albumName,
-                    artist = lead.artist,
-                    artworkPath = albumTracks.firstNotNullOfOrNull { it.artworkPath },
-                    seedColor = albumTracks.firstNotNullOfOrNull { it.artworkSeedColor },
-                    tracks = albumTracks
-                )
-            }.sortedBy { it.name.lowercase() }
+    val artists = artistBuckets.entries.map { (artistName, artistTracks) ->
+        val albumNames = HashSet<String>()
+        for (t in artistTracks) albumNames.add(t.album)
+        ArtistGroup(
+            name = artistName,
+            artworkPath = artistTracks.firstNotNullOfOrNull { it.artworkPath },
+            seedColor = artistTracks.firstNotNullOfOrNull { it.artworkSeedColor },
+            tracks = artistTracks,
+            albumCount = albumNames.size
+        )
+    }.sortedBy { it.name.lowercase() }
 
-    val artists: List<ArtistGroup>
-        get() = tracks.groupBy { it.artist }
-            .map { (artistName, artistTracks) ->
-                ArtistGroup(
-                    name = artistName,
-                    artworkPath = artistTracks.firstNotNullOfOrNull { it.artworkPath },
-                    seedColor = artistTracks.firstNotNullOfOrNull { it.artworkSeedColor },
-                    tracks = artistTracks,
-                    albumCount = artistTracks.map { it.album }.distinct().size
-                )
-            }.sortedBy { it.name.lowercase() }
+    return LibrarySnapshot(
+        tracks = tracks,
+        tracksById = tracksById,
+        recentlyPlayed = recentlyPlayed,
+        mostPlayed = mostPlayed,
+        recentlyAdded = recentlyAdded,
+        favorites = favorites,
+        genres = genres,
+        albums = albums,
+        artists = artists,
+        totalDurationMs = totalDuration
+    )
+}
 
-    val filteredTracks: List<Track>
-        get() {
-            val q = filters.searchQuery.trim().lowercase()
-            val base = tracks.filter { track ->
-                val matchesTab = when (filters.activeTab) {
-                    LibraryTab.FAVORITES -> track.isFavorite
-                    else -> true
-                }
-                val matchesQuery = q.isEmpty() ||
-                    track.title.lowercase().contains(q) ||
-                    track.artist.lowercase().contains(q) ||
-                    track.album.lowercase().contains(q) ||
-                    track.genre.lowercase().contains(q)
-                val matchesGenre = filters.selectedGenre == null || track.genre == filters.selectedGenre
-                val matchesArtist = filters.selectedArtistFilter == null || track.artist == filters.selectedArtistFilter
-                val matchesAlbum = filters.selectedAlbumFilter == null || track.album == filters.selectedAlbumFilter
-                matchesTab && matchesQuery && matchesGenre && matchesArtist && matchesAlbum
-            }
-            return when (filters.sortOption) {
-                SortOption.TITLE -> base.sortedBy { it.title.lowercase() }
-                SortOption.ARTIST -> base.sortedBy { it.artist.lowercase() }
-                SortOption.DATE_ADDED -> base.sortedByDescending { it.dateAdded }
-                SortOption.DURATION -> base.sortedByDescending { it.durationMs }
-                SortOption.MOST_PLAYED -> base.sortedByDescending { it.playCount }
-            }
+private fun computeFilteredTracks(tracks: List<Track>, filters: LibraryUiFilters): List<Track> {
+    if (tracks.isEmpty()) return emptyList()
+    val q = filters.searchQuery.trim()
+    val hasQuery = q.isNotEmpty()
+    val favOnly = filters.activeTab == LibraryTab.FAVORITES
+    val genre = filters.selectedGenre
+    val artist = filters.selectedArtistFilter
+    val album = filters.selectedAlbumFilter
+
+    val base = if (!hasQuery && !favOnly && genre == null && artist == null && album == null) {
+        tracks
+    } else {
+        tracks.filter { track ->
+            (!favOnly || track.isFavorite) &&
+                (genre == null || track.genre == genre) &&
+                (artist == null || track.artist == artist) &&
+                (album == null || track.album == album) &&
+                (!hasQuery ||
+                    track.title.contains(q, ignoreCase = true) ||
+                    track.artist.contains(q, ignoreCase = true) ||
+                    track.album.contains(q, ignoreCase = true) ||
+                    track.genre.contains(q, ignoreCase = true))
         }
+    }
+
+    return when (filters.sortOption) {
+        SortOption.TITLE -> base.sortedBy { it.title.lowercase() }
+        SortOption.ARTIST -> base.sortedBy { it.artist.lowercase() }
+        SortOption.DATE_ADDED -> base.sortedByDescending { it.dateAdded }
+        SortOption.DURATION -> base.sortedByDescending { it.durationMs }
+        SortOption.MOST_PLAYED -> base.sortedByDescending { it.playCount }
+    }
 }
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
@@ -138,6 +197,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val repository = MusicRepository(application)
     private val preferencesRepo = UserPreferencesRepository(application)
     private val audioEngine = AudioEngine(application)
+
+    /** High-frequency playback progress isolated from PlayerUiState to prevent 4Hz full-tree recompositions. */
+    val playbackProgress: StateFlow<PlaybackProgress> = audioEngine.playbackProgress
 
     private val _filters = MutableStateFlow(LibraryUiFilters())
     private val _activeDestination = MutableStateFlow(NavDestination.HOME)
@@ -159,6 +221,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val banner: String?
     )
 
+    private val librarySnapshotFlow = repository.tracks
+        .map(::buildLibrarySnapshot)
+        .flowOn(Dispatchers.Default)
+
+    private val filteredTracksFlow = combine(
+        repository.tracks,
+        _filters,
+        ::computeFilteredTracks
+    ).flowOn(Dispatchers.Default)
+
     private val navOverlayFlow = combine(
         _filters,
         _activeDestination,
@@ -177,35 +249,49 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    val uiState: StateFlow<PlayerUiState> = combine(
-        repository.tracks,
-        repository.playlists,
+    private data class AudioAndPrefsBundle(
+        val playback: PlaybackState,
+        val eqState: EqState,
+        val spatialAudio: SpatialAudioState,
+        val prefs: UserPreferences,
+        val sleep: SleepTimerState
+    )
+
+    private val audioAndPrefsFlow = combine(
         audioEngine.playbackState,
         audioEngine.equalizerController.state,
         audioEngine.spatialAudioController.state,
         preferencesRepo.preferences,
-        _sleepTimer,
-        navOverlayFlow
-    ) { arr ->
-        @Suppress("UNCHECKED_CAST")
-        val tracks = arr[0] as List<Track>
-        @Suppress("UNCHECKED_CAST")
-        val playlists = arr[1] as List<Playlist>
-        val playback = arr[2] as PlaybackState
-        val eqState = arr[3] as EqState
-        val spatialAudio = arr[4] as SpatialAudioState
-        val prefs = arr[5] as UserPreferences
-        val sleep = arr[6] as SleepTimerState
-        val overlay = arr[7] as UiNavOverlay
+        _sleepTimer
+    ) { playback, eq, spatial, prefs, sleep ->
+        AudioAndPrefsBundle(playback, eq, spatial, prefs, sleep)
+    }
 
+    val uiState: StateFlow<PlayerUiState> = combine(
+        librarySnapshotFlow,
+        filteredTracksFlow,
+        repository.playlists,
+        audioAndPrefsFlow,
+        navOverlayFlow
+    ) { snapshot, filtered, playlists, audioPrefs, overlay ->
         PlayerUiState(
-            tracks = tracks,
+            tracks = snapshot.tracks,
+            tracksById = snapshot.tracksById,
+            recentlyPlayed = snapshot.recentlyPlayed,
+            mostPlayed = snapshot.mostPlayed,
+            recentlyAdded = snapshot.recentlyAdded,
+            favorites = snapshot.favorites,
+            genres = snapshot.genres,
+            albums = snapshot.albums,
+            artists = snapshot.artists,
+            totalDurationMs = snapshot.totalDurationMs,
+            filteredTracks = filtered,
             playlists = playlists,
-            playback = playback,
-            eqState = eqState,
-            spatialAudio = spatialAudio,
-            preferences = prefs,
-            sleepTimer = sleep,
+            playback = audioPrefs.playback,
+            eqState = audioPrefs.eqState,
+            spatialAudio = audioPrefs.spatialAudio,
+            preferences = audioPrefs.prefs,
+            sleepTimer = audioPrefs.sleep,
             filters = overlay.filters,
             activeDestination = overlay.destination,
             selectedPlaylistId = overlay.playlistId,

@@ -1,11 +1,5 @@
 package com.example.ui.components
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -55,50 +48,7 @@ import com.example.data.model.AlbumGroup
 import com.example.data.model.ArtistGroup
 import com.example.data.model.Playlist
 import com.example.data.model.Track
-import com.example.ui.theme.LocalReducedMotion
 import com.example.ui.theme.MonoFontFamily
-
-@Composable
-fun PlayingWaveformBars(
-    isPlaying: Boolean,
-    color: Color = MaterialTheme.colorScheme.primary,
-    modifier: Modifier = Modifier
-) {
-    val reducedMotion = LocalReducedMotion.current
-    val transition = rememberInfiniteTransition(label = "eq_bars")
-    val bar1 by transition.animateFloat(
-        initialValue = 0.25f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(420, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "b1"
-    )
-    val bar2 by transition.animateFloat(
-        initialValue = 0.85f, targetValue = 0.2f,
-        animationSpec = infiniteRepeatable(tween(520, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "b2"
-    )
-    val bar3 by transition.animateFloat(
-        initialValue = 0.35f, targetValue = 0.92f,
-        animationSpec = infiniteRepeatable(tween(380, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "b3"
-    )
-
-    val heights = if (isPlaying && !reducedMotion) listOf(bar1, bar2, bar3) else listOf(0.4f, 0.7f, 0.5f)
-    Row(
-        modifier = modifier.height(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.5.dp),
-        verticalAlignment = Alignment.Bottom
-    ) {
-        heights.forEach { frac ->
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .fillMaxHeight(frac)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(color)
-            )
-        }
-    }
-}
 
 @Composable
 fun SongRowItem(
@@ -134,29 +84,13 @@ fun SongRowItem(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(54.dp)) {
-                TrackArtwork(
-                    artworkPath = track.artworkPath,
-                    title = track.title,
-                    seedColor = track.artworkSeedColor,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxSize()
-                )
-                if (isCurrentTrack) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        PlayingWaveformBars(
-                            isPlaying = isPlaying,
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    }
-                }
-            }
+            TrackArtwork(
+                artworkPath = track.artworkPath,
+                title = track.title,
+                seedColor = track.artworkSeedColor,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.size(54.dp)
+            )
 
             Spacer(modifier = Modifier.width(14.dp))
 
@@ -486,13 +420,6 @@ fun QuickPlayTile(
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
-                )
-            }
-            if (isCurrent) {
-                PlayingWaveformBars(
-                    isPlaying = isPlaying,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.padding(end = 14.dp)
                 )
             }
         }

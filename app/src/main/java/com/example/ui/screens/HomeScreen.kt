@@ -5,10 +5,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,6 +45,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,7 +58,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.example.audio.PlaybackProgress
 import com.example.data.model.NavDestination
 import com.example.data.model.Track
 import com.example.ui.components.AlbumCard
@@ -65,10 +71,12 @@ import com.example.ui.components.SongRowItem
 import com.example.ui.components.TrackArtwork
 import com.example.ui.components.timeOfDayGreeting
 import com.example.ui.viewmodel.PlayerUiState
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun HomeScreen(
     uiState: PlayerUiState,
+    playbackProgress: StateFlow<PlaybackProgress>,
     onSearchChange: (String) -> Unit,
     onImportClick: () -> Unit,
     onGenerateSamplesClick: () -> Unit,
@@ -89,42 +97,77 @@ fun HomeScreen(
 ) {
     val currentTrack = uiState.playback.currentTrack
     val continueTrack = currentTrack ?: uiState.recentlyPlayed.firstOrNull() ?: uiState.tracks.firstOrNull()
+    val greeting = remember { timeOfDayGreeting() }
+    val quickPlayTracks = remember(uiState.recentlyPlayed, uiState.favorites, uiState.tracks) {
+        val result = ArrayList<Track>(4)
+        val seen = HashSet<String>(8)
+        fun collectUpToFour(source: List<Track>) {
+            for (t in source) {
+                if (result.size >= 4) return
+                if (seen.add(t.id)) result.add(t)
+            }
+        }
+        collectUpToFour(uiState.recentlyPlayed)
+        collectUpToFour(uiState.favorites)
+        collectUpToFour(uiState.tracks)
+        result
+    }
+    val homePreviewTracks = remember(uiState.tracks) { uiState.tracks.take(8) }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-        contentPadding = PaddingValues(bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp)
-    ) {
-        // Expressive Greeting Header
-        item(key = "header") {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 16.dp, top = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = timeOfDayGreeting(),
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold
-                    )
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isWideLandscape = maxWidth >= 600.dp
+        val isShortLandscape = maxHeight < 480.dp && maxWidth > maxHeight
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+            contentPadding = PaddingValues(
+                bottom = when {
+                    uiState.tracks.isEmpty() -> 24.dp
+                    isShortLandscape -> 80.dp
+                    else -> 96.dp
+                }
+            ),
+            verticalArrangement = Arrangement.spacedBy(if (isShortLandscape) 12.dp else 18.dp)
+        ) {
+            // Expressive Greeting Header
+            item(key = "header", contentType = "header") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 20.dp, top = if (isShortLandscape) 8.dp else 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = greeting,
+                            style = if (isShortLandscape) MaterialTheme.typography.headlineMedium
+                            else MaterialTheme.typography.displaySmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     if (uiState.tracks.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "${uiState.tracks.size} local tracks • ${uiState.playlists.size} playlists",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
+                Spacer(modifier = Modifier.width(12.dp))
                 FilledTonalButton(
                     onClick = onImportClick,
-                    shape = RoundedCornerShape(20.dp),
+                    shape = CircleShape,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    modifier = Modifier.testTag("home_import_button")
+                    modifier = Modifier
+                        .height(48.dp)
+                        .testTag("home_import_button")
                 ) {
                     if (uiState.isImporting) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -132,7 +175,12 @@ fun HomeScreen(
                         Icon(Icons.Rounded.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
                     }
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Import")
+                    Text(
+                        text = "Import",
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -142,8 +190,22 @@ fun HomeScreen(
             OutlinedTextField(
                 value = uiState.filters.searchQuery,
                 onValueChange = onSearchChange,
-                placeholder = { Text("Search songs, artists, albums…") },
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                textStyle = MaterialTheme.typography.bodyMedium,
+                placeholder = {
+                    Text(
+                        text = "Search songs, artists, albums…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
                 trailingIcon = {
                     if (uiState.filters.searchQuery.isNotEmpty()) {
                         IconButton(onClick = { onSearchChange("") }) {
@@ -152,7 +214,7 @@ fun HomeScreen(
                     }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(28.dp),
+                shape = CircleShape,
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -186,7 +248,11 @@ fun HomeScreen(
                     )
                 }
             } else {
-                items(matches.take(10), key = { "search_${it.id}" }) { track ->
+                items(
+                    items = matches.take(10),
+                    key = { "search_${it.id}" },
+                    contentType = { "song_row" }
+                ) { track ->
                     SongRowItem(
                         track = track,
                         isCurrentTrack = currentTrack?.id == track.id,
@@ -202,9 +268,10 @@ fun HomeScreen(
             }
         } else if (uiState.tracks.isEmpty()) {
             // Welcoming First-Launch Empty State Card
-            item(key = "empty_hero") {
+            item(key = "empty_hero", contentType = "empty_hero") {
                 EmptyHomeHeroCard(
                     isImporting = uiState.isImporting,
+                    isLandscape = isWideLandscape,
                     onImportClick = onImportClick,
                     onGenerateSamplesClick = onGenerateSamplesClick,
                     modifier = Modifier.padding(horizontal = 20.dp)
@@ -213,12 +280,12 @@ fun HomeScreen(
         } else {
             // 1. Continue Listening Hero Card
             if (continueTrack != null) {
-                item(key = "continue_listening") {
+                item(key = "continue_listening", contentType = "continue_listening") {
                     ContinueListeningHeroCard(
                         track = continueTrack,
                         isCurrentlyLoaded = currentTrack?.id == continueTrack.id,
                         isPlaying = uiState.playback.isPlaying && currentTrack?.id == continueTrack.id,
-                        positionMs = if (currentTrack?.id == continueTrack.id) uiState.playback.positionMs else 0L,
+                        progressFlow = playbackProgress,
                         durationMs = if (currentTrack?.id == continueTrack.id) uiState.playback.durationMs else continueTrack.durationMs,
                         onPlayOrResume = {
                             if (currentTrack?.id == continueTrack.id) onTogglePlayPause()
@@ -236,24 +303,22 @@ fun HomeScreen(
                 }
             }
 
-            // 2. Quick Play 2-Column Grid
-            val quickPlayTracks = (uiState.recentlyPlayed + uiState.favorites + uiState.tracks)
-                .distinctBy { it.id }
-                .take(4)
+            // 2. Quick Play Responsive Grid (4-column row in landscape/tablet, 2x2 in portrait)
             if (quickPlayTracks.isNotEmpty()) {
-                item(key = "quick_play") {
+                item(key = "quick_play", contentType = "quick_play") {
+                    val columns = if (isWideLandscape && quickPlayTracks.size >= 3) 4 else 2
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         SectionHeader(title = "Quick Play")
                         Column(
                             modifier = Modifier.padding(horizontal = 20.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            quickPlayTracks.chunked(2).forEach { pair ->
+                            quickPlayTracks.chunked(columns).forEach { rowItems ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    pair.forEach { track ->
+                                    rowItems.forEach { track ->
                                         QuickPlayTile(
                                             track = track,
                                             isCurrent = currentTrack?.id == track.id,
@@ -262,7 +327,9 @@ fun HomeScreen(
                                             modifier = Modifier.weight(1f)
                                         )
                                     }
-                                    if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
+                                    repeat(columns - rowItems.size) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
                                 }
                             }
                         }
@@ -328,13 +395,20 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 20.dp),
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            items(uiState.playlists, key = { it.id }) { pl ->
-                                val plTracks = pl.trackIds.mapNotNull { uiState.tracksById[it] }
+                            items(
+                                items = uiState.playlists,
+                                key = { it.id },
+                                contentType = { "playlist_card" }
+                            ) { pl ->
+                                val leadTrack = remember(pl.trackIds, uiState.tracksById) {
+                                    pl.trackIds.firstNotNullOfOrNull { uiState.tracksById[it] }
+                                }
                                 PlaylistCard(
                                     playlist = pl,
-                                    leadTrack = plTracks.firstOrNull(),
+                                    leadTrack = leadTrack,
                                     onClick = { onOpenPlaylist(pl.id) },
                                     onQuickPlay = {
+                                        val plTracks = pl.trackIds.mapNotNull { uiState.tracksById[it] }
                                         if (plTracks.isNotEmpty()) onPlayTrack(plTracks.first(), plTracks)
                                     },
                                     modifier = Modifier.width(172.dp)
@@ -415,14 +489,18 @@ fun HomeScreen(
             }
 
             // 9. All Songs Preview
-            item(key = "all_songs_header") {
+            item(key = "all_songs_header", contentType = "section_header") {
                 SectionHeader(
                     title = "All Songs",
                     actionLabel = "View Library",
                     onAction = { onNavigate(NavDestination.LIBRARY) }
                 )
             }
-            items(uiState.tracks.take(8), key = { "home_song_${it.id}" }) { track ->
+            items(
+                items = homePreviewTracks,
+                key = { "home_song_${it.id}" },
+                contentType = { "song_row" }
+            ) { track ->
                 SongRowItem(
                     track = track,
                     isCurrentTrack = currentTrack?.id == track.id,
@@ -437,87 +515,197 @@ fun HomeScreen(
             }
         }
     }
+    }
 }
 
 @Composable
 private fun EmptyHomeHeroCard(
     isImporting: Boolean,
+    isLandscape: Boolean,
     onImportClick: () -> Unit,
     onGenerateSamplesClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = RoundedCornerShape(32.dp),
+        shape = RoundedCornerShape(28.dp),
         tonalElevation = 3.dp,
         modifier = modifier.fillMaxWidth()
     ) {
-        Column {
-            Box(
+        if (isLandscape) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(190.dp)
+                    .height(216.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.img_hero_listening_1795773856153),
-                    contentDescription = "Expressive acoustic sculpture banner",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainerLow)
+                        .weight(0.42f)
+                        .fillMaxHeight()
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.img_hero_listening_1795773856153),
+                        contentDescription = "Expressive acoustic sculpture banner",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainerLow)
+                                )
                             )
-                        )
-                )
-            }
-            Column(
-                modifier = Modifier.padding(start = 22.dp, end = 22.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Your local music studio awaits",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Import MP3, FLAC, WAV, M4A, AAC, or OGG audio directly from your device. Everything stays 100% private and offline.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Button(
-                    onClick = onImportClick,
-                    enabled = !isImporting,
-                    shape = RoundedCornerShape(20.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .testTag("empty_import_button")
-                ) {
-                    Icon(Icons.Rounded.AudioFile, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Import Audio Files from Device")
+                    )
                 }
-                FilledTonalButton(
-                    onClick = onGenerateSamplesClick,
-                    enabled = !isImporting,
-                    shape = RoundedCornerShape(20.dp),
+                Column(
+                    modifier = Modifier
+                        .weight(0.58f)
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Your local music studio awaits",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Import MP3, FLAC, WAV, M4A, AAC, or OGG audio directly from your device. Everything stays 100% private and offline.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = onImportClick,
+                            enabled = !isImporting,
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("empty_import_button")
+                        ) {
+                            Icon(Icons.Rounded.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Import Audio",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = onGenerateSamplesClick,
+                            enabled = !isImporting,
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("generate_samples_button")
+                        ) {
+                            if (isImporting) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Demo WAVs",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            Column {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp)
-                        .testTag("generate_samples_button")
+                        .height(160.dp)
                 ) {
-                    if (isImporting) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
+                    Image(
+                        painter = painterResource(id = R.drawable.img_hero_listening_1795773856153),
+                        contentDescription = "Expressive acoustic sculpture banner",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainerLow)
+                                )
+                            )
+                    )
+                }
+                Column(
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Your local music studio awaits",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Import MP3, FLAC, WAV, M4A, AAC, or OGG audio directly from your device. Everything stays 100% private and offline.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Button(
+                        onClick = onImportClick,
+                        enabled = !isImporting,
+                        shape = CircleShape,
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("empty_import_button")
+                    ) {
+                        Icon(Icons.Rounded.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Import Audio Files",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Create 4 Local Synth Demo Tracks (WAV)")
+                    FilledTonalButton(
+                        onClick = onGenerateSamplesClick,
+                        enabled = !isImporting,
+                        shape = CircleShape,
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("generate_samples_button")
+                    ) {
+                        if (isImporting) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Create Demo Tracks (WAV)",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
@@ -529,27 +717,25 @@ private fun ContinueListeningHeroCard(
     track: Track,
     isCurrentlyLoaded: Boolean,
     isPlaying: Boolean,
-    positionMs: Long,
+    progressFlow: StateFlow<PlaybackProgress>,
     durationMs: Long,
     onPlayOrResume: () -> Unit,
     onCardClick: () -> Unit,
     onShuffleAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val progress = if (durationMs > 0L) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        shape = RoundedCornerShape(32.dp),
+        shape = RoundedCornerShape(28.dp),
         tonalElevation = 4.dp,
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(32.dp))
+            .clip(RoundedCornerShape(28.dp))
             .clickable(onClick = onCardClick)
             .testTag("continue_listening_card")
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -562,58 +748,58 @@ private fun ContinueListeningHeroCard(
                 )
                 Surface(
                     onClick = onShuffleAll,
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.22f),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.24f),
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.testTag("home_shuffle_all_button")
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(5.dp))
-                        Text("Shuffle All", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            text = "Shuffle All",
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1
+                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TrackArtwork(
                     artworkPath = track.artworkPath,
                     title = track.title,
                     seedColor = track.artworkSeedColor,
-                    shape = RoundedCornerShape(22.dp),
-                    modifier = Modifier.size(86.dp)
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.size(78.dp)
                 )
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = track.title,
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "${track.artist} • ${track.album}",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     if (isCurrentlyLoaded) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(5.dp)
-                                .clip(RoundedCornerShape(3.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ContinueListeningProgressBar(
+                            progressFlow = progressFlow,
+                            fallbackDurationMs = durationMs
                         )
                     }
                 }
@@ -625,20 +811,42 @@ private fun ContinueListeningHeroCard(
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     shadowElevation = 4.dp,
                     modifier = Modifier
-                        .size(56.dp)
+                        .size(52.dp)
                         .testTag("continue_play_button")
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(28.dp)
                         )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ContinueListeningProgressBar(
+    progressFlow: StateFlow<PlaybackProgress>,
+    fallbackDurationMs: Long
+) {
+    val progressState by progressFlow.collectAsStateWithLifecycle()
+    val effectiveDuration = if (progressState.durationMs > 0L) progressState.durationMs else fallbackDurationMs
+    val fraction = if (effectiveDuration > 0L) {
+        (progressState.positionMs.toFloat() / effectiveDuration.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+
+    LinearProgressIndicator(
+        progress = { fraction },
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(4.dp)
+            .clip(CircleShape)
+    )
 }
 
 @Composable
@@ -713,11 +921,22 @@ fun SectionHeader(
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
         )
         if (actionLabel != null && onAction != null) {
-            TextButton(onClick = onAction) {
-                Text(actionLabel)
+            TextButton(
+                onClick = onAction,
+                shape = CircleShape,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1
+                )
             }
         }
     }

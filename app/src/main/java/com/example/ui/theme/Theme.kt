@@ -1,5 +1,10 @@
 package com.example.ui.theme
 
+import android.app.Activity
+import android.os.Build
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
@@ -9,10 +14,12 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import com.example.data.model.ColorPreset
 import com.example.data.model.ThemeMode
 
@@ -32,6 +39,35 @@ fun CadenceTheme(
         ThemeMode.SYSTEM -> systemDark
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
+    }
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val activity = view.context as? ComponentActivity
+            if (activity != null) {
+                val barStyle = if (darkTheme) {
+                    SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                } else {
+                    SystemBarStyle.light(
+                        android.graphics.Color.TRANSPARENT,
+                        android.graphics.Color.TRANSPARENT
+                    )
+                }
+                activity.enableEdgeToEdge(
+                    statusBarStyle = barStyle,
+                    navigationBarStyle = barStyle
+                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    activity.window.isNavigationBarContrastEnforced = false
+                }
+            } else {
+                val window = (view.context as? Activity)?.window
+                if (window != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    window.isNavigationBarContrastEnforced = false
+                }
+            }
+        }
     }
 
     val activeSeed = remember(colorPreset, dynamicAlbumColorsEnabled, artworkSeedColor) {
@@ -60,9 +96,10 @@ fun CadenceTheme(
 
 @Composable
 private fun animateColorScheme(target: ColorScheme, reducedMotion: Boolean): ColorScheme {
-    val spec = remember(reducedMotion) {
-        if (reducedMotion) snap<Color>()
-        else spring<Color>(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioNoBouncy)
+    if (reducedMotion) return target
+
+    val spec = remember {
+        spring<Color>(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioNoBouncy)
     }
 
     @Composable
