@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.SpatialAudio
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -73,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.audio.PlaybackState
 import com.example.data.model.SleepTimerState
+import com.example.data.model.SpatialAudioState
 import com.example.data.model.Track
 import com.example.ui.components.ExpressiveProgressBar
 import com.example.ui.components.LyricsPanel
@@ -93,6 +95,7 @@ private enum class NowPlayingTab(val label: String) {
 @Composable
 fun NowPlayingScreen(
     playback: PlaybackState,
+    spatialAudio: SpatialAudioState,
     sleepTimer: SleepTimerState,
     isSidePanel: Boolean,
     onCollapse: () -> Unit,
@@ -107,6 +110,7 @@ fun NowPlayingScreen(
     onSpeedChange: (Float) -> Unit,
     onToggleFavorite: (Track) -> Unit,
     onOpenSleepTimer: () -> Unit,
+    onOpenAudioStudio: () -> Unit,
     onAddToPlaylist: (Track) -> Unit,
     onJumpToQueueIndex: (Int) -> Unit,
     onMoveQueueItem: (Int, Int) -> Unit,
@@ -229,6 +233,7 @@ fun NowPlayingScreen(
                                             NowPlayingControlsBody(
                                                 track = track,
                                                 playback = playback,
+                                                spatialAudio = spatialAudio,
                                                 sleepTimer = sleepTimer,
                                                 compact = false,
                                                 onToggleFavorite = { onToggleFavorite(track) },
@@ -243,7 +248,8 @@ fun NowPlayingScreen(
                                                 onSpeedChange = onSpeedChange,
                                                 onOpenQueue = { activeTab = NowPlayingTab.QUEUE },
                                                 onOpenLyrics = { activeTab = NowPlayingTab.LYRICS },
-                                                onOpenSleepTimer = onOpenSleepTimer
+                                                onOpenSleepTimer = onOpenSleepTimer,
+                                                onOpenAudioStudio = onOpenAudioStudio
                                             )
                                         }
                                     }
@@ -272,6 +278,7 @@ fun NowPlayingScreen(
                                         NowPlayingControlsBody(
                                             track = track,
                                             playback = playback,
+                                            spatialAudio = spatialAudio,
                                             sleepTimer = sleepTimer,
                                             compact = isSidePanel,
                                             onToggleFavorite = { onToggleFavorite(track) },
@@ -286,7 +293,8 @@ fun NowPlayingScreen(
                                             onSpeedChange = onSpeedChange,
                                             onOpenQueue = { activeTab = NowPlayingTab.QUEUE },
                                             onOpenLyrics = { activeTab = NowPlayingTab.LYRICS },
-                                            onOpenSleepTimer = onOpenSleepTimer
+                                            onOpenSleepTimer = onOpenSleepTimer,
+                                            onOpenAudioStudio = onOpenAudioStudio
                                         )
                                     }
                                 }
@@ -473,6 +481,7 @@ private fun AnimatedTrackArtwork(
 private fun NowPlayingControlsBody(
     track: Track,
     playback: PlaybackState,
+    spatialAudio: SpatialAudioState,
     sleepTimer: SleepTimerState,
     compact: Boolean,
     onToggleFavorite: () -> Unit,
@@ -487,10 +496,12 @@ private fun NowPlayingControlsBody(
     onSpeedChange: (Float) -> Unit,
     onOpenQueue: () -> Unit,
     onOpenLyrics: () -> Unit,
-    onOpenSleepTimer: () -> Unit
+    onOpenSleepTimer: () -> Unit,
+    onOpenAudioStudio: () -> Unit
 ) {
     var speedMenuExpanded by remember { mutableStateOf(false) }
     val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+    val fmt = playback.activeAudioFormat
 
     // Title, artist, favorite
     Row(
@@ -527,6 +538,46 @@ private fun NowPlayingControlsBody(
                 contentDescription = if (track.isFavorite) "Remove favorite" else "Favorite track",
                 tint = if (track.isFavorite) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    // Live Dolby Atmos / Spatial Audio format pill
+    Spacer(modifier = Modifier.height(10.dp))
+    val badgeText = remember(fmt, spatialAudio.isEnabled, spatialAudio.profile) {
+        val khz = if (fmt.sampleRateHz > 0) " • ${String.format("%.1f", fmt.sampleRateHz / 1000f)} kHz" else ""
+        when {
+            fmt.isDolbyAtmos -> "Dolby Atmos • ${fmt.channelLayoutLabel}$khz"
+            fmt.isDolbyDigitalPlus -> "Dolby Digital Plus • ${fmt.channelLayoutLabel}$khz"
+            spatialAudio.isEnabled -> "Dolby Atmos Spatial (${spatialAudio.profile.label}) • ${fmt.codecLabel}$khz"
+            else -> "${fmt.codecLabel} • ${fmt.channelLayoutLabel}$khz"
+        }
+    }
+    val highlightAtmos = fmt.isDolbyAtmos || spatialAudio.isEnabled
+    Surface(
+        onClick = onOpenAudioStudio,
+        color = if (highlightAtmos) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = if (highlightAtmos) MaterialTheme.colorScheme.onPrimaryContainer
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.testTag("now_playing_atmos_badge")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.SpatialAudio,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = badgeText,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }

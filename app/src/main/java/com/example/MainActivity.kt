@@ -96,6 +96,11 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                 "audio/aac",
                 "audio/flac",
                 "audio/ogg",
+                "audio/eac3",
+                "audio/eac3-joc",
+                "audio/ac4",
+                "audio/ac3",
+                "video/mp4",
                 "audio/*"
             )
         )
@@ -227,6 +232,7 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                             VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                             NowPlayingScreen(
                                 playback = uiState.playback,
+                                spatialAudio = uiState.spatialAudio,
                                 sleepTimer = uiState.sleepTimer,
                                 isSidePanel = true,
                                 onCollapse = {},
@@ -241,6 +247,7 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                                 onSpeedChange = viewModel::setPlaybackSpeed,
                                 onToggleFavorite = viewModel::toggleFavorite,
                                 onOpenSleepTimer = { showSleepTimerDialog = true },
+                                onOpenAudioStudio = { viewModel.selectDestination(NavDestination.EQUALIZER) },
                                 onAddToPlaylist = { trackForPlaylistDialog = it },
                                 onJumpToQueueIndex = viewModel::jumpToQueueIndex,
                                 onMoveQueueItem = viewModel::moveQueueItem,
@@ -336,6 +343,7 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                     ) {
                         NowPlayingScreen(
                             playback = uiState.playback,
+                            spatialAudio = uiState.spatialAudio,
                             sleepTimer = uiState.sleepTimer,
                             isSidePanel = false,
                             onCollapse = viewModel::collapseNowPlaying,
@@ -350,6 +358,10 @@ fun CadenceApp(viewModel: PlayerViewModel = viewModel()) {
                             onSpeedChange = viewModel::setPlaybackSpeed,
                             onToggleFavorite = viewModel::toggleFavorite,
                             onOpenSleepTimer = { showSleepTimerDialog = true },
+                            onOpenAudioStudio = {
+                                viewModel.collapseNowPlaying()
+                                viewModel.selectDestination(NavDestination.EQUALIZER)
+                            },
                             onAddToPlaylist = { trackForPlaylistDialog = it },
                             onJumpToQueueIndex = viewModel::jumpToQueueIndex,
                             onMoveQueueItem = viewModel::moveQueueItem,
@@ -474,11 +486,17 @@ private fun ActiveDestinationContent(
 
         NavDestination.EQUALIZER -> EqualizerScreen(
             eqState = uiState.eqState,
+            spatialAudio = uiState.spatialAudio,
+            activeAudioFormat = uiState.playback.activeAudioFormat,
             playbackSpeed = uiState.playback.playbackSpeed,
             sleepTimer = uiState.sleepTimer,
             onToggleEq = viewModel::setEqEnabled,
             onApplyPreset = viewModel::applyEqPreset,
             onBandLevelChange = viewModel::setEqBandLevel,
+            onToggleDolbyAtmos = viewModel::setDolbyAtmosEnabled,
+            onSelectAtmosProfile = viewModel::setAtmosProfile,
+            onVirtualizerStrengthChange = viewModel::setSpatialVirtualizerStrength,
+            onBassBoostStrengthChange = viewModel::setBassBoostStrength,
             onSpeedChange = viewModel::setPlaybackSpeed,
             onOpenSleepTimer = onOpenSleepTimer,
             modifier = modifier
@@ -489,6 +507,7 @@ private fun ActiveDestinationContent(
             onThemeModeChange = viewModel::setThemeMode,
             onColorPresetChange = viewModel::setColorPreset,
             onDynamicAlbumColorsChange = viewModel::setDynamicAlbumColors,
+            onDolbyAtmosChange = viewModel::setDolbyAtmosEnabled,
             onGaplessChange = viewModel::setGaplessEnabled,
             onReducedMotionChange = viewModel::setReducedMotion,
             onImportClick = onImportClick,

@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,16 +14,24 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.SpatialAudio
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.SurroundSound
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -36,13 +46,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.data.model.ActiveAudioFormat
+import com.example.data.model.AtmosProfile
 import com.example.data.model.EqBand
 import com.example.data.model.EqPreset
 import com.example.data.model.EqState
 import com.example.data.model.SleepTimerState
+import com.example.data.model.SpatialAudioState
 import com.example.ui.components.formatDurationMs
 import com.example.ui.theme.MonoFontFamily
 import kotlin.math.roundToInt
@@ -51,15 +65,22 @@ import kotlin.math.roundToInt
 @Composable
 fun EqualizerScreen(
     eqState: EqState,
+    spatialAudio: SpatialAudioState,
+    activeAudioFormat: ActiveAudioFormat,
     playbackSpeed: Float,
     sleepTimer: SleepTimerState,
     onToggleEq: (Boolean) -> Unit,
     onApplyPreset: (EqPreset) -> Unit,
     onBandLevelChange: (bandIndex: Int, levelMb: Int) -> Unit,
+    onToggleDolbyAtmos: (Boolean) -> Unit,
+    onSelectAtmosProfile: (AtmosProfile) -> Unit,
+    onVirtualizerStrengthChange: (Int) -> Unit,
+    onBassBoostStrengthChange: (Int) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onOpenSleepTimer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
     LazyColumn(
@@ -69,24 +90,237 @@ fun EqualizerScreen(
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        item(key = "eq_header") {
+        item(key = "studio_header") {
+            Column {
+                Text(
+                    text = "Audio Studio & Atmos",
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Dolby Atmos spatialization, 5-band DSP equalizer & playback tuning",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Dolby Atmos & Android Spatial Audio Expressive Card
+        item(key = "dolby_atmos_card") {
+            Surface(
+                color = if (spatialAudio.isEnabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+                else MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = RoundedCornerShape(30.dp),
+                tonalElevation = 3.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                color = if (spatialAudio.isEnabled) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = if (spatialAudio.isEnabled) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.size(46.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.SpatialAudio,
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Dolby Atmos & Spatial Audio",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (spatialAudio.isEnabled) {
+                                        "${spatialAudio.profile.label} profile • ${spatialAudio.profile.subtitle}"
+                                    } else {
+                                        "Enable E-AC-3 JOC / AC-4 spatialization & 3D soundstage"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = spatialAudio.isEnabled,
+                            onCheckedChange = onToggleDolbyAtmos,
+                            modifier = Modifier.testTag("dolby_atmos_switch")
+                        )
+                    }
+
+                    // Atmos Profile Selector
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AtmosProfile.entries.forEach { profile ->
+                            FilterChip(
+                                selected = spatialAudio.profile == profile,
+                                enabled = spatialAudio.isEnabled,
+                                onClick = { onSelectAtmosProfile(profile) },
+                                label = { Text(profile.label) },
+                                modifier = Modifier.testTag("atmos_profile_${profile.name.lowercase()}")
+                            )
+                        }
+                    }
+
+                    // Spatial Virtualizer Depth Slider
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("3D Spatial Immersion", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                text = "${(spatialAudio.virtualizerStrength / 10)}%",
+                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Slider(
+                            value = spatialAudio.virtualizerStrength.toFloat(),
+                            onValueChange = { onVirtualizerStrengthChange(it.roundToInt()) },
+                            valueRange = 0f..1000f,
+                            enabled = spatialAudio.isEnabled,
+                            modifier = Modifier.testTag("spatial_virtualizer_slider")
+                        )
+                    }
+
+                    // Sub-Bass Depth Slider
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Atmos Sub-Bass Depth", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                text = "${(spatialAudio.bassBoostStrength / 10)}%",
+                                style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Slider(
+                            value = spatialAudio.bassBoostStrength.toFloat(),
+                            onValueChange = { onBassBoostStrengthChange(it.roundToInt()) },
+                            valueRange = 0f..1000f,
+                            enabled = spatialAudio.isEnabled,
+                            modifier = Modifier.testTag("bass_boost_slider")
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    // Real-time Hardware & Stream Capabilities Matrix
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "DEVICE & STREAM STATUS",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        CapabilityStatusRow(
+                            label = "Hardware Dolby Decoder",
+                            value = when {
+                                spatialAudio.supportsHardwareAtmosJoc && spatialAudio.supportsHardwareAc4 -> "E-AC-3 JOC + AC-4"
+                                spatialAudio.supportsHardwareAtmosJoc -> "E-AC-3 JOC (Atmos)"
+                                spatialAudio.supportsHardwareAc4 -> "Dolby AC-4"
+                                spatialAudio.supportsHardwareEac3 -> "Dolby Digital Plus"
+                                else -> "DSP Spatial Fallback"
+                            },
+                            active = spatialAudio.hasHardwareDolbyDecoder
+                        )
+                        CapabilityStatusRow(
+                            label = "Android Spatializer",
+                            value = when {
+                                spatialAudio.isSystemSpatializerEnabled -> "Active"
+                                spatialAudio.isSystemSpatializerAvailable -> "Ready (Enable in Sound Settings)"
+                                else -> "Standard Output"
+                            },
+                            active = spatialAudio.isSystemSpatializerEnabled
+                        )
+                        CapabilityStatusRow(
+                            label = "Head Tracking",
+                            value = if (spatialAudio.isHeadTrackerAvailable) "Supported" else "Unavailable",
+                            active = spatialAudio.isHeadTrackerAvailable
+                        )
+                        CapabilityStatusRow(
+                            label = "Active Track Stream",
+                            value = buildString {
+                                append(activeAudioFormat.codecLabel)
+                                append(" • ")
+                                append(activeAudioFormat.channelLayoutLabel)
+                                if (activeAudioFormat.sampleRateHz > 0) {
+                                    append(" • ")
+                                    append(String.format("%.1f kHz", activeAudioFormat.sampleRateHz / 1000f))
+                                }
+                            },
+                            active = activeAudioFormat.isDolbyAtmos || activeAudioFormat.isMultichannel
+                        )
+                    }
+
+                    FilledTonalButton(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_SOUND_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("system_spatial_settings_button")
+                    ) {
+                        Icon(Icons.Rounded.Headphones, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Android Sound & Spatial Audio Settings")
+                    }
+                }
+            }
+        }
+
+        // 5-Band Graphic Equalizer Card
+        item(key = "eq_section_header") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Audio Studio & EQ",
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = if (eqState.isHardwareSupported) "Real-time Android DSP 5-Band Equalizer"
-                        else "Audio DSP active when playback session starts",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "5-Band Equalizer",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (eqState.isHardwareSupported) "Real-time Android audiofx DSP"
+                            else "Activates when audio session starts",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Switch(
                     checked = eqState.isEnabled,
@@ -143,7 +377,7 @@ fun EqualizerScreen(
         item(key = "eq_presets") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "Presets",
+                    text = "EQ Presets",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -288,6 +522,39 @@ fun EqualizerScreen(
 }
 
 @Composable
+private fun CapabilityStatusRow(
+    label: String,
+    value: String,
+    active: Boolean
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (active) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
+                contentDescription = null,
+                tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
 private fun EqCurveCanvas(
     bands: List<EqBand>,
     enabled: Boolean,
@@ -303,7 +570,6 @@ private fun EqCurveCanvas(
         val h = size.height
         val midY = h / 2f
 
-        // Zero dB center reference line
         drawLine(
             color = gridColor,
             start = Offset(0f, midY),
@@ -316,7 +582,7 @@ private fun EqCurveCanvas(
         val stepX = if (bands.size > 1) w / (bands.size - 1).toFloat() else w
         val points = bands.mapIndexed { i, band ->
             val span = (band.maxMb - band.minMb).coerceAtLeast(1).toFloat()
-            val norm = (band.levelMb - band.minMb).toFloat() / span // 0..1
+            val norm = (band.levelMb - band.minMb).toFloat() / span
             val y = h - (norm * (h * 0.82f) + h * 0.09f)
             Offset(i * stepX, y)
         }

@@ -5,9 +5,11 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.data.model.AtmosProfile
 import com.example.data.model.ColorPreset
 import com.example.data.model.RepeatMode
 import com.example.data.model.ThemeMode
@@ -27,6 +29,10 @@ data class UserPreferences(
     val eqEnabled: Boolean = false,
     val eqPreset: String = "Flat",
     val eqBandsMb: List<Int> = listOf(0, 0, 0, 0, 0),
+    val dolbyAtmosEnabled: Boolean = false,
+    val atmosProfile: AtmosProfile = AtmosProfile.MUSIC,
+    val spatialVirtualizerStrength: Int = 550,
+    val bassBoostStrength: Int = 250,
     val gaplessEnabled: Boolean = true,
     val reducedMotion: Boolean = false,
     val lastTrackId: String? = null,
@@ -47,6 +53,10 @@ class UserPreferencesRepository(private val context: Context) {
         val EQ_ENABLED = booleanPreferencesKey("eq_enabled")
         val EQ_PRESET = stringPreferencesKey("eq_preset")
         val EQ_BANDS_MB = stringPreferencesKey("eq_bands_mb")
+        val DOLBY_ATMOS_ENABLED = booleanPreferencesKey("dolby_atmos_enabled")
+        val ATMOS_PROFILE = stringPreferencesKey("atmos_profile")
+        val SPATIAL_VIRTUALIZER = intPreferencesKey("spatial_virtualizer_strength")
+        val BASS_BOOST = intPreferencesKey("bass_boost_strength")
         val GAPLESS_ENABLED = booleanPreferencesKey("gapless_enabled")
         val REDUCED_MOTION = booleanPreferencesKey("reduced_motion")
         val LAST_TRACK_ID = stringPreferencesKey("last_track_id")
@@ -73,6 +83,11 @@ class UserPreferencesRepository(private val context: Context) {
                 ?.mapNotNull { it.trim().toIntOrNull() }
                 ?.takeIf { it.size == 5 }
                 ?: listOf(0, 0, 0, 0, 0),
+            dolbyAtmosEnabled = prefs[Keys.DOLBY_ATMOS_ENABLED] ?: false,
+            atmosProfile = prefs[Keys.ATMOS_PROFILE]?.let { runCatching { AtmosProfile.valueOf(it) }.getOrNull() }
+                ?: AtmosProfile.MUSIC,
+            spatialVirtualizerStrength = prefs[Keys.SPATIAL_VIRTUALIZER] ?: 550,
+            bassBoostStrength = prefs[Keys.BASS_BOOST] ?: 250,
             gaplessEnabled = prefs[Keys.GAPLESS_ENABLED] ?: true,
             reducedMotion = prefs[Keys.REDUCED_MOTION] ?: false,
             lastTrackId = prefs[Keys.LAST_TRACK_ID],
@@ -122,6 +137,20 @@ class UserPreferencesRepository(private val context: Context) {
             it[Keys.EQ_ENABLED] = enabled
             it[Keys.EQ_PRESET] = preset
             it[Keys.EQ_BANDS_MB] = bandsMb.joinToString(",")
+        }
+    }
+
+    suspend fun setDolbyAtmosSettings(
+        enabled: Boolean,
+        profile: AtmosProfile,
+        virtualizerStrength: Int,
+        bassBoostStrength: Int
+    ) {
+        context.dataStore.edit {
+            it[Keys.DOLBY_ATMOS_ENABLED] = enabled
+            it[Keys.ATMOS_PROFILE] = profile.name
+            it[Keys.SPATIAL_VIRTUALIZER] = virtualizerStrength.coerceIn(0, 1000)
+            it[Keys.BASS_BOOST] = bassBoostStrength.coerceIn(0, 1000)
         }
     }
 

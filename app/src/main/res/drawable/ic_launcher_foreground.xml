@@ -1,8 +1,134 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/img_app_icon_pixel_player_1795777265853"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle inner safe-zone coordinate mapping (center 54,54; bounds ~27..83) -->
+    <group
+        android:translateX="14.5"
+        android:translateY="14.5"
+        android:scaleX="0.79"
+        android:scaleY="0.79">
+
+        <!-- 1. Red upper-left arch of the note loop -->
+        <path
+            android:fillColor="#EA4335"
+            android:pathData="M45.5,50.0 C30.5,49.8 19.6,57.4 19.6,67.8 C19.6,71.2 20.6,74.4 22.4,77.0 L28.4,69.6 C27.8,67.8 27.9,65.8 28.9,63.8 C30.8,60.2 35.8,58.6 45.5,58.8 Z" />
+
+        <!-- Subtle fold shadow where red tucks behind blue stem -->
+        <path
+            android:fillColor="#C5221F"
+            android:fillAlpha="0.32"
+            android:pathData="M42.2,50.1 L45.5,50.0 L45.5,58.8 L42.2,58.8 Z" />
+
+        <!-- 2. Green bottom loop of the note head with smooth curved ribbon overlap -->
+        <path
+            android:fillColor="#34A853"
+            android:pathData="M31.6,60.4 C24.6,63.2 20.8,68.2 20.8,73.4 C21.8,80.4 28.8,85.0 37.6,85.0 C46.8,85.0 54.2,78.4 54.2,68.6 L54.2,61.0 L45.2,66.8 C44.7,72.6 41.6,76.0 36.8,76.0 C31.4,76.0 27.8,72.2 27.8,67.2 C27.8,64.4 29.2,61.9 31.6,60.4 Z" />
+
+        <!-- Subtle depth shadow along green-over-red ribbon curve -->
+        <path
+            android:fillColor="#1E8E3E"
+            android:fillAlpha="0.30"
+            android:pathData="M31.6,60.4 C26.6,62.4 23.0,66.2 21.4,70.8 C23.6,67.8 26.8,65.4 29.2,64.2 C29.8,62.6 30.6,61.3 31.6,60.4 Z" />
+
+        <!-- 3. Blue vertical ribbon stem sweeping into lower-right curve -->
+        <path
+            android:fillColor="#4285F4"
+            android:pathData="M50.5,15.0 C47.2,15.0 45.2,17.2 45.2,20.8 L45.2,65.0 C45.2,70.2 43.4,73.5 40.6,75.4 C46.4,75.2 52.8,70.6 54.2,63.0 L54.2,24.8 C54.2,19.4 55.2,16.4 56.5,15.2 C55.0,15.0 52.8,15.0 50.5,15.0 Z" />
+
+        <!-- Subtle shadow along blue lower curve -->
+        <path
+            android:fillColor="#1A73E8"
+            android:fillAlpha="0.32"
+            android:pathData="M54.2,55.0 L54.2,63.0 C53.0,69.2 48.0,73.8 42.4,75.2 C47.6,72.0 51.4,66.8 54.2,55.0 Z" />
+
+        <!-- 4. Top folded flag: Red inner fold -->
+        <path
+            android:fillColor="#EA4335"
+            android:pathData="M56.5,15.2 C55.2,16.4 54.2,19.4 54.2,24.8 L54.2,26.8 C59.8,29.5 63.6,33.2 64.5,39.2 C66.2,36.2 66.8,31.2 65.0,25.5 C63.2,19.8 59.5,16.2 56.5,15.2 Z" />
+
+        <!-- Fold crease shadow between blue stem & red flag -->
+        <path
+            android:fillColor="#B31412"
+            android:fillAlpha="0.28"
+            android:pathData="M56.5,15.2 C55.2,16.4 54.2,19.4 54.2,24.8 L54.2,26.8 L57.2,28.2 L57.5,16.6 Z" />
+
+        <!-- 5. Top folded flag: Yellow outer ribbon -->
+        <path
+            android:fillColor="#FBBC05"
+            android:pathData="M60.2,18.4 C62.8,22.4 64.5,27.2 64.5,33.2 C64.5,35.6 64.2,37.8 63.8,39.8 C66.8,37.6 70.6,38.0 72.6,42.2 C74.4,39.4 74.6,35.0 73.0,30.5 C70.8,24.4 65.5,20.2 60.2,18.4 Z" />
+
+        <!-- Subtle amber crease shadow between red & yellow flag -->
+        <path
+            android:fillColor="#E37400"
+            android:fillAlpha="0.26"
+            android:pathData="M60.2,18.4 C62.8,22.4 64.5,27.2 64.5,33.2 C64.5,35.6 64.2,37.8 63.8,39.8 L66.2,38.4 C66.6,31.5 65.2,24.2 61.6,19.2 Z" />
+
+        <!-- 6. Five multicolor soundwave equalizer bars (centered at y=50) -->
+        <!-- Bar 1: Red (short) -->
+        <path
+            android:strokeColor="#EA4335"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M61.0,47.8 L61.0,52.2" />
+
+        <!-- Bar 2: Yellow bottom + Red top -->
+        <path
+            android:strokeColor="#FBBC05"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M64.5,52.2 L64.5,55.5" />
+        <path
+            android:strokeColor="#EA4335"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M64.5,44.2 L64.5,52.8" />
+
+        <!-- Bar 3 (tallest): Green bottom + Red top -->
+        <path
+            android:strokeColor="#34A853"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M68.0,51.2 L68.0,58.6" />
+        <path
+            android:strokeColor="#EA4335"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M68.0,41.4 L68.0,51.6" />
+
+        <!-- Bar 4: Green bottom + Yellow top -->
+        <path
+            android:strokeColor="#34A853"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M71.5,49.4 L71.5,55.6" />
+        <path
+            android:strokeColor="#FBBC05"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M71.5,44.4 L71.5,49.6" />
+
+        <!-- Bar 5: Green (short) -->
+        <path
+            android:strokeColor="#34A853"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M75.0,47.4 L75.0,52.6" />
+
+        <!-- 7. Two concentric acoustic arcs (Yellow inner, Blue outer) -->
+        <path
+            android:strokeColor="#FBBC05"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M77.6,44.2 C80.8,47.2 80.8,52.8 77.6,55.8" />
+        <path
+            android:strokeColor="#4285F4"
+            android:strokeWidth="2.2"
+            android:strokeLineCap="round"
+            android:pathData="M80.8,40.8 C85.8,45.8 85.8,54.2 80.8,59.2" />
+
+    </group>
+</vector>

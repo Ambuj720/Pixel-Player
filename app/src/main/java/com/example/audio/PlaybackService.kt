@@ -7,32 +7,70 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
 /**
  * Shared singleton holder so the UI AudioEngine and background MediaSessionService
- * control the exact same ExoPlayer instance without restarting audio on screen rotation
- * or navigation changes.
+ * control the exact same ExoPlayer & DefaultTrackSelector instance (with spatialization
+ * and multichannel Dolby Atmos track selection support) without restarting audio on
+ * screen rotation or navigation changes.
  */
+@OptIn(UnstableApi::class)
 object SharedPlayerHolder {
     @Volatile
     private var player: ExoPlayer? = null
 
-    @OptIn(UnstableApi::class)
+    @Volatile
+    private var trackSelector: DefaultTrackSelector? = null
+
     fun getOrCreatePlayer(context: Context): ExoPlayer {
         return player ?: synchronized(this) {
-            player ?: ExoPlayer.Builder(context.applicationContext)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                        .setUsage(C.USAGE_MEDIA)
-                        .build(),
-                    true
-                )
-                .setHandleAudioBecomingNoisy(true)
+            player ?: run {
+                val appContext = context.applicationContext
+                val selector = DefaultTrackSelector(appContext).apply {
+                    parameters = buildUponParameters()
+                        .setConstrainAudioChannelCountToDeviceCapabilities(true)
+                        .setExceedAudioConstraintsIfNecessary(true)
+                        .build()
+                }
+                trackSelector = selector
+
+                ExoPlayer.Builder(appContext)
+                    .setTrackSelector(selector)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                            .setUsage(C.USAGE_MEDIA)
+                            .setSpatializationBehavior(C.SPATIALIZATION_BEHAVIOR_AUTO)
+                            .build(),
+                        true
+                    )
+                    .setHandleAudioBecomingNoisy(true)
+                    .build()
+                    .also { player = it }
+            }
+        }
+    }
+
+    fun configureSpatialization(enabled: Boolean) {
+        val exo = player ?: return
+        val behavior = if (enabled) C.SPATIALIZATION_BEHAVIOR_AUTO else C.SPATIALIZATION_BEHAVIOR_NEVER
+        exo.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .setUsage(C.USAGE_MEDIA)
+                .setSpatializationBehavior(behavior)
+                .build(),
+            true
+        )
+        trackSelector?.let { selector ->
+            selector.parameters = selector.buildUponParameters()
+                .setConstrainAudioChannelCountToDeviceCapabilities(enabled)
+                .setMaxAudioChannelCount(if (enabled) Int.MAX_VALUE else 2)
+                .setExceedAudioConstraintsIfNecessary(true)
                 .build()
-                .also { player = it }
         }
     }
 

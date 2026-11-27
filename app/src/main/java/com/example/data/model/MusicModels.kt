@@ -151,3 +151,47 @@ data class ArtworkPalette(
     val tertiary: Color,
     val surfaceTint: Color
 )
+
+enum class AtmosProfile(val label: String, val subtitle: String) {
+    MUSIC("Music", "Balanced 3D soundstage & crisp vocals"),
+    CINEMA("Cinema", "Wide surround depth & rich sub-bass"),
+    VOICE("Voice", "Focused center clarity & gentle room air"),
+    DYNAMIC("Dynamic", "Adaptive spatial energy for all genres")
+}
+
+data class ActiveAudioFormat(
+    val mimeType: String = "",
+    val codecLabel: String = "Standard Audio",
+    val channelCount: Int = 2,
+    val sampleRateHz: Int = 0,
+    val bitrateBps: Int = 0,
+    val isDolbyAtmos: Boolean = false,
+    val isDolbyDigitalPlus: Boolean = false,
+    val isMultichannel: Boolean = false
+) {
+    val channelLayoutLabel: String
+        get() = when {
+            channelCount >= 8 -> "7.1 Surround"
+            channelCount >= 6 -> "5.1 Surround"
+            channelCount > 2 -> "$channelCount-Ch Surround"
+            channelCount == 1 -> "Mono"
+            else -> "Stereo"
+        }
+}
+
+data class SpatialAudioState(
+    val isEnabled: Boolean = false,
+    val profile: AtmosProfile = AtmosProfile.MUSIC,
+    val virtualizerStrength: Int = 550,
+    val bassBoostStrength: Int = 250,
+    val supportsHardwareAtmosJoc: Boolean = false,
+    val supportsHardwareAc4: Boolean = false,
+    val supportsHardwareEac3: Boolean = false,
+    val isSystemSpatializerAvailable: Boolean = false,
+    val isSystemSpatializerEnabled: Boolean = false,
+    val isHeadTrackerAvailable: Boolean = false,
+    val isDspVirtualizerSupported: Boolean = true
+) {
+    val hasHardwareDolbyDecoder: Boolean
+        get() = supportsHardwareAtmosJoc || supportsHardwareAc4 || supportsHardwareEac3
+}

@@ -152,10 +152,14 @@ class MetadataParser(private val context: Context) {
         return when (ext) {
             "mp3" -> "audio/mpeg"
             "wav" -> "audio/wav"
-            "m4a" -> "audio/mp4"
+            "m4a", "mp4" -> "audio/mp4"
             "aac" -> "audio/aac"
             "flac" -> "audio/flac"
             "ogg", "oga" -> "audio/ogg"
+            "ec3", "eac3" -> "audio/eac3-joc"
+            "ac4" -> "audio/ac4"
+            "ac3" -> "audio/ac3"
+            "mkv", "mka" -> "audio/x-matroska"
             else -> "audio/*"
         }
     }

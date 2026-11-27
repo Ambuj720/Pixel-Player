@@ -59,6 +59,7 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     onColorPresetChange: (ColorPreset) -> Unit,
     onDynamicAlbumColorsChange: (Boolean) -> Unit,
+    onDolbyAtmosChange: (Boolean) -> Unit,
     onGaplessChange: (Boolean) -> Unit,
     onReducedMotionChange: (Boolean) -> Unit,
     onImportClick: () -> Unit,
@@ -206,6 +207,30 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Text("Playback & Accessibility", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Dolby Atmos & Spatial Audio", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                text = if (uiState.spatialAudio.hasHardwareDolbyDecoder) {
+                                    "Hardware Dolby decoder detected • E-AC-3 JOC / AC-4 & 3D spatializer"
+                                } else {
+                                    "Media3 spatialization + real-time 3D DSP Virtualizer & Bass Boost"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = uiState.spatialAudio.isEnabled,
+                            onCheckedChange = onDolbyAtmosChange,
+                            modifier = Modifier.testTag("settings_dolby_atmos_switch")
+                        )
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

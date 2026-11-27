@@ -11,6 +11,7 @@ import com.example.data.local.UserPreferences
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.model.AlbumGroup
 import com.example.data.model.ArtistGroup
+import com.example.data.model.AtmosProfile
 import com.example.data.model.ColorPreset
 import com.example.data.model.EqPreset
 import com.example.data.model.EqState
@@ -20,6 +21,7 @@ import com.example.data.model.Playlist
 import com.example.data.model.RepeatMode
 import com.example.data.model.SleepTimerState
 import com.example.data.model.SortOption
+import com.example.data.model.SpatialAudioState
 import com.example.data.model.ThemeMode
 import com.example.data.model.Track
 import kotlinx.coroutines.Job
@@ -50,6 +52,7 @@ data class PlayerUiState(
     val playlists: List<Playlist> = emptyList(),
     val playback: PlaybackState = PlaybackState(),
     val eqState: EqState = EqState(),
+    val spatialAudio: SpatialAudioState = SpatialAudioState(),
     val preferences: UserPreferences = UserPreferences(),
     val sleepTimer: SleepTimerState = SleepTimerState(),
     val filters: LibraryUiFilters = LibraryUiFilters(),
@@ -179,6 +182,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         repository.playlists,
         audioEngine.playbackState,
         audioEngine.equalizerController.state,
+        audioEngine.spatialAudioController.state,
         preferencesRepo.preferences,
         _sleepTimer,
         navOverlayFlow
@@ -189,15 +193,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val playlists = arr[1] as List<Playlist>
         val playback = arr[2] as PlaybackState
         val eqState = arr[3] as EqState
-        val prefs = arr[4] as UserPreferences
-        val sleep = arr[5] as SleepTimerState
-        val overlay = arr[6] as UiNavOverlay
+        val spatialAudio = arr[4] as SpatialAudioState
+        val prefs = arr[5] as UserPreferences
+        val sleep = arr[6] as SleepTimerState
+        val overlay = arr[7] as UiNavOverlay
 
         PlayerUiState(
             tracks = tracks,
             playlists = playlists,
             playback = playback,
             eqState = eqState,
+            spatialAudio = spatialAudio,
             preferences = prefs,
             sleepTimer = sleep,
             filters = overlay.filters,
@@ -237,6 +243,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 presetName = prefs.eqPreset,
                 bandLevelsMb = prefs.eqBandsMb
             )
+            audioEngine.spatialAudioController.applySavedState(
+                enabled = prefs.dolbyAtmosEnabled,
+                profile = prefs.atmosProfile,
+                virtualizerStrength = prefs.spatialVirtualizerStrength,
+                bassBoostStrength = prefs.bassBoostStrength
+            )
+            audioEngine.setSpatializationEnabled(prefs.dolbyAtmosEnabled)
         }
 
         // Sync Room metadata updates (like favorite / lyrics changes) into active queue & restore last session
@@ -552,6 +565,43 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 enabled = eq.isEnabled,
                 preset = eq.activePreset,
                 bandsMb = eq.bands.map { it.levelMb }
+            )
+        }
+    }
+
+    // --- Dolby Atmos & Spatial Audio ---
+    fun setDolbyAtmosEnabled(enabled: Boolean) {
+        audioEngine.setSpatializationEnabled(enabled)
+        persistSpatialAudio()
+        showBanner(
+            if (enabled) "Dolby Atmos & Spatial Audio enabled"
+            else "Spatial Audio turned off (Standard Stereo)"
+        )
+    }
+
+    fun setAtmosProfile(profile: AtmosProfile) {
+        audioEngine.spatialAudioController.applyProfile(profile)
+        persistSpatialAudio()
+    }
+
+    fun setSpatialVirtualizerStrength(strength: Int) {
+        audioEngine.spatialAudioController.setVirtualizerStrength(strength)
+        persistSpatialAudio()
+    }
+
+    fun setBassBoostStrength(strength: Int) {
+        audioEngine.spatialAudioController.setBassBoostStrength(strength)
+        persistSpatialAudio()
+    }
+
+    private fun persistSpatialAudio() {
+        val sp = audioEngine.spatialAudioController.state.value
+        viewModelScope.launch {
+            preferencesRepo.setDolbyAtmosSettings(
+                enabled = sp.isEnabled,
+                profile = sp.profile,
+                virtualizerStrength = sp.virtualizerStrength,
+                bassBoostStrength = sp.bassBoostStrength
             )
         }
     }

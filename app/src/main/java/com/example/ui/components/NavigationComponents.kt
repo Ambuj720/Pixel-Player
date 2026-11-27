@@ -180,13 +180,15 @@ fun AppSidebar(
             ) {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(38.dp)
+                    color = androidx.compose.ui.graphics.Color.White,
+                    shadowElevation = 2.dp,
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.GraphicEq, contentDescription = null)
-                    }
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.ic_launcher_foreground),
+                        contentDescription = "Pixel Player logo",
+                        modifier = Modifier.padding(2.dp)
+                    )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {

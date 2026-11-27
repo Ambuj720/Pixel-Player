@@ -112,12 +112,13 @@ fun HomeScreen(
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = if (uiState.tracks.isEmpty()) "Local Material 3 Expressive Audio"
-                        else "${uiState.tracks.size} local tracks • ${uiState.playlists.size} playlists",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (uiState.tracks.isNotEmpty()) {
+                        Text(
+                            text = "${uiState.tracks.size} local tracks • ${uiState.playlists.size} playlists",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 FilledTonalButton(
                     onClick = onImportClick,

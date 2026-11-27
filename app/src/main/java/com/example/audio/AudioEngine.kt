@@ -4,13 +4,17 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.example.data.model.ActiveAudioFormat
 import com.example.data.model.RepeatMode
 import com.example.data.model.Track
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +42,7 @@ data class PlaybackState(
     val playbackSpeed: Float = 1.0f,
     val volume: Float = 0.85f,
     val isMuted: Boolean = false,
+    val activeAudioFormat: ActiveAudioFormat = ActiveAudioFormat(),
     val errorMessage: String? = null
 ) {
     val currentTrack: Track?
@@ -49,6 +54,7 @@ class AudioEngine(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val exoPlayer: ExoPlayer = SharedPlayerHolder.getOrCreatePlayer(context)
     val equalizerController = EqualizerController()
+    val spatialAudioController = SpatialAudioController(context)
 
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
@@ -65,6 +71,14 @@ class AudioEngine(private val context: Context) {
         @OptIn(UnstableApi::class)
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
             equalizerController.attachToSession(audioSessionId)
+            spatialAudioController.attachToSession(audioSessionId)
+        }
+
+        override fun onTracksChanged(tracks: Tracks) {
+            val format = extractSelectedAudioFormat(tracks)
+            if (format != null) {
+                _playbackState.update { it.copy(activeAudioFormat = format) }
+            }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -127,7 +141,57 @@ class AudioEngine(private val context: Context) {
         val initialSession = exoPlayer.audioSessionId
         if (initialSession != 0) {
             equalizerController.attachToSession(initialSession)
+            spatialAudioController.attachToSession(initialSession)
         }
+    }
+
+    fun setSpatializationEnabled(enabled: Boolean) {
+        SharedPlayerHolder.configureSpatialization(enabled)
+        spatialAudioController.setEnabled(enabled)
+    }
+
+    private fun extractSelectedAudioFormat(tracks: Tracks): ActiveAudioFormat? {
+        for (group in tracks.groups) {
+            if (group.type == C.TRACK_TYPE_AUDIO && group.isSelected) {
+                for (i in 0 until group.length) {
+                    if (group.isTrackSelected(i)) {
+                        val fmt = group.getTrackFormat(i)
+                        val mime = fmt.sampleMimeType.orEmpty()
+                        val channels = fmt.channelCount.takeIf { it > 0 } ?: 2
+                        val sampleRate = fmt.sampleRate.takeIf { it > 0 } ?: 0
+                        val bitrate = fmt.bitrate.takeIf { it > 0 } ?: 0
+                        val isAtmos = mime.equals(MimeTypes.AUDIO_E_AC3_JOC, ignoreCase = true) ||
+                            mime.equals(MimeTypes.AUDIO_AC4, ignoreCase = true)
+                        val isDdp = mime.equals(MimeTypes.AUDIO_E_AC3, ignoreCase = true)
+                        val label = when {
+                            mime.equals(MimeTypes.AUDIO_E_AC3_JOC, ignoreCase = true) -> "Dolby Atmos (E-AC-3 JOC)"
+                            mime.equals(MimeTypes.AUDIO_AC4, ignoreCase = true) -> "Dolby Atmos (AC-4)"
+                            mime.equals(MimeTypes.AUDIO_E_AC3, ignoreCase = true) -> "Dolby Digital Plus"
+                            mime.equals(MimeTypes.AUDIO_AC3, ignoreCase = true) -> "Dolby Digital"
+                            mime.equals(MimeTypes.AUDIO_FLAC, ignoreCase = true) -> "FLAC Lossless"
+                            mime.equals(MimeTypes.AUDIO_RAW, ignoreCase = true) -> "PCM WAV"
+                            mime.equals(MimeTypes.AUDIO_MPEG, ignoreCase = true) -> "MP3"
+                            mime.equals(MimeTypes.AUDIO_AAC, ignoreCase = true) -> "AAC"
+                            mime.equals(MimeTypes.AUDIO_OPUS, ignoreCase = true) -> "Opus"
+                            mime.equals(MimeTypes.AUDIO_VORBIS, ignoreCase = true) -> "Vorbis OGG"
+                            mime.isNotBlank() -> mime.substringAfter('/').uppercase()
+                            else -> "Standard Audio"
+                        }
+                        return ActiveAudioFormat(
+                            mimeType = mime,
+                            codecLabel = label,
+                            channelCount = channels,
+                            sampleRateHz = sampleRate,
+                            bitrateBps = bitrate,
+                            isDolbyAtmos = isAtmos,
+                            isDolbyDigitalPlus = isDdp,
+                            isMultichannel = channels > 2
+                        )
+                    }
+                }
+            }
+        }
+        return null
     }
 
     fun playQueue(tracks: List<Track>, startIndex: Int, startPositionMs: Long = 0L, autoPlay: Boolean = true) {
@@ -397,5 +461,6 @@ class AudioEngine(private val context: Context) {
         stopPositionTicker()
         exoPlayer.removeListener(playerListener)
         equalizerController.release()
+        spatialAudioController.release()
     }
 }
