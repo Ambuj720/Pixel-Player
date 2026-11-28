@@ -6,6 +6,7 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.PlaylistEntity
 import com.example.data.local.PlaylistTrackEntity
 import com.example.data.local.TrackEntity
+import com.example.data.media.MediaStoreScanner
 import com.example.data.media.MetadataParser
 import com.example.data.media.SampleAudioGenerator
 import com.example.data.model.Playlist
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 
 class MusicRepository(context: Context) {
@@ -23,6 +25,7 @@ class MusicRepository(context: Context) {
     private val trackDao = db.trackDao()
     private val playlistDao = db.playlistDao()
     private val metadataParser = MetadataParser(context)
+    private val mediaStoreScanner = MediaStoreScanner(context)
     private val sampleGenerator = SampleAudioGenerator(context)
 
     val tracks: Flow<List<Track>> = trackDao.observeAllTracks().map { entities ->
@@ -33,40 +36,53 @@ class MusicRepository(context: Context) {
         playlistDao.observePlaylists(),
         playlistDao.observeAllPlaylistTracks()
     ) { playlistEntities, mappings ->
-        val byPlaylist = mappings.groupBy { it.playlistId }
+        // Mappings arrive pre-sorted by (playlistId, sortOrder ASC) from SQLite; collect trackIds in a single O(M) pass.
+        val trackIdsByPlaylist = HashMap<String, ArrayList<String>>((playlistEntities.size * 2).coerceAtLeast(4))
+        for (m in mappings) {
+            trackIdsByPlaylist.getOrPut(m.playlistId) { ArrayList() }.add(m.trackId)
+        }
         playlistEntities.map { entity ->
-            val trackIds = byPlaylist[entity.id]
-                ?.sortedBy { it.sortOrder }
-                ?.map { it.trackId }
-                .orEmpty()
             Playlist(
                 id = entity.id,
                 name = entity.name,
                 description = entity.description,
                 createdAt = entity.createdAt,
                 updatedAt = entity.updatedAt,
-                trackIds = trackIds,
+                trackIds = trackIdsByPlaylist[entity.id].orEmpty(),
                 coverArtIndex = entity.coverArtIndex
             )
         }
     }
 
     suspend fun importUris(uris: List<Uri>): Int = withContext(Dispatchers.IO) {
-        var importedCount = 0
-        val newEntities = mutableListOf<TrackEntity>()
+        if (uris.isEmpty()) return@withContext 0
+        // Single query + HashSet turns O(M * N) per-URI table scans into O(N + M)
+        val existingUris = trackDao.getAllUriStrings().toHashSet()
+        val newEntities = ArrayList<TrackEntity>(uris.size)
         for (uri in uris) {
-            val existing = trackDao.getTrackByUri(uri.toString())
-            if (existing != null) continue
+            val uriStr = uri.toString()
+            if (!existingUris.add(uriStr)) continue
             val parsed = metadataParser.parseUri(uri)
             if (parsed != null) {
                 newEntities.add(TrackEntity.fromDomain(parsed))
-                importedCount++
             }
         }
         if (newEntities.isNotEmpty()) {
             trackDao.upsertTracks(newEntities)
         }
-        importedCount
+        newEntities.size
+    }
+
+    suspend fun scanDeviceAudio(): Int = withContext(Dispatchers.IO) {
+        val existingUris = trackDao.getAllUriStrings().toHashSet()
+        val scannedTracks = mediaStoreScanner.scanSupportedAudio(existingUris)
+        if (scannedTracks.isEmpty()) return@withContext 0
+        val entities = ArrayList<TrackEntity>(scannedTracks.size)
+        for (track in scannedTracks) {
+            entities.add(TrackEntity.fromDomain(track))
+        }
+        trackDao.upsertTracks(entities)
+        entities.size
     }
 
     suspend fun generateLocalDemoTracks(): Int = withContext(Dispatchers.IO) {
@@ -110,8 +126,16 @@ class MusicRepository(context: Context) {
         trackDao.updateLyrics(trackId, lyrics?.takeIf { it.isNotBlank() })
     }
 
-    suspend fun deleteTrack(trackId: String) {
+    suspend fun deleteTrack(trackId: String) = withContext(Dispatchers.IO) {
+        val artworkPath = trackDao.getTrackById(trackId)?.artworkPath
         trackDao.deleteTrack(trackId)
+        if (!artworkPath.isNullOrBlank()) {
+            val file = File(artworkPath)
+            // Only remove per-track artwork files; keep shared album_<id>.jpg artwork intact for sibling tracks
+            if (file.name.startsWith("art_")) {
+                runCatching { file.delete() }
+            }
+        }
     }
 
     suspend fun createPlaylist(name: String, description: String, initialTrackIds: List<String> = emptyList()): String {
@@ -148,9 +172,8 @@ class MusicRepository(context: Context) {
     }
 
     suspend fun addTrackToPlaylist(playlistId: String, trackId: String) {
-        val current = playlistDao.getTracksForPlaylist(playlistId)
-        if (current.any { it.trackId == trackId }) return
-        val nextOrder = (current.maxOfOrNull { it.sortOrder } ?: -1) + 1
+        if (playlistDao.isTrackInPlaylist(playlistId, trackId)) return
+        val nextOrder = (playlistDao.getMaxSortOrder(playlistId) ?: -1) + 1
         playlistDao.insertPlaylistTrack(PlaylistTrackEntity(playlistId, trackId, nextOrder))
         playlistDao.touchPlaylist(playlistId, System.currentTimeMillis())
     }

@@ -80,8 +80,10 @@ fun PlaylistsScreen(
     onMoveTrackInPlaylist: (playlistId: String, fromIndex: Int, toIndex: Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val selectedPlaylist = uiState.selectedPlaylistId?.let { id ->
-        uiState.playlists.firstOrNull { it.id == id }
+    val selectedPlaylist = remember(uiState.selectedPlaylistId, uiState.playlists) {
+        uiState.selectedPlaylistId?.let { id ->
+            uiState.playlists.firstOrNull { it.id == id }
+        }
     }
 
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -530,7 +532,10 @@ private fun PlaylistDetailView(
     }
 
     if (showAddTracksDialog) {
-        val available = allTracks.filterNot { playlist.trackIds.contains(it.id) }
+        val available = remember(allTracks, playlist.trackIds) {
+            val existingIds = playlist.trackIds.toHashSet()
+            allTracks.filterNot { it.id in existingIds }
+        }
         AlertDialog(
             onDismissRequest = { showAddTracksDialog = false },
             title = { Text("Add songs to ${playlist.name}") },

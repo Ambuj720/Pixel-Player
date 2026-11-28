@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -90,16 +91,51 @@ data class PlayerUiState(
     val selectedPlaylistId: String? = null,
     val isNowPlayingExpanded: Boolean = false,
     val isImporting: Boolean = false,
+    val isScanningDevice: Boolean = false,
+    val preferencesLoaded: Boolean = false,
     val statusBanner: String? = null
 )
+
+private const val HOME_SHELF_LIMIT = 12
+
+/**
+ * Maintains a descending Top-K list in O(K) per insertion without allocating/sorting all N items.
+ * For K = 12, total work across N tracks is strictly O(N) time and O(1) extra space.
+ */
+private inline fun insertTopK(
+    target: ArrayList<Track>,
+    candidate: Track,
+    limit: Int,
+    crossinline keyOf: (Track) -> Long
+) {
+    val candidateKey = keyOf(candidate)
+    if (target.size == limit && candidateKey <= keyOf(target[limit - 1])) return
+    var insertPos = target.size
+    while (insertPos > 0 && candidateKey > keyOf(target[insertPos - 1])) {
+        insertPos--
+    }
+    if (insertPos < limit) {
+        if (target.size == limit) {
+            target.removeAt(limit - 1)
+        }
+        target.add(insertPos, candidate)
+    }
+}
+
+private val CASE_INSENSITIVE_TRACK_TITLE = compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.title }
+private val CASE_INSENSITIVE_TRACK_ARTIST = compareBy<Track, String>(String.CASE_INSENSITIVE_ORDER) { it.artist }
+private val CASE_INSENSITIVE_ALBUM_NAME = compareBy<AlbumGroup, String>(String.CASE_INSENSITIVE_ORDER) { it.name }
+private val CASE_INSENSITIVE_ARTIST_NAME = compareBy<ArtistGroup, String>(String.CASE_INSENSITIVE_ORDER) { it.name }
 
 private fun buildLibrarySnapshot(tracks: List<Track>): LibrarySnapshot {
     if (tracks.isEmpty()) return LibrarySnapshot()
 
-    val tracksById = HashMap<String, Track>(tracks.size * 2)
+    val mapCapacity = ((tracks.size / 0.75f).toInt() + 1).coerceAtLeast(16)
+    val tracksById = HashMap<String, Track>(mapCapacity)
     val favorites = ArrayList<Track>()
-    val playedTracks = ArrayList<Track>()
-    val countedTracks = ArrayList<Track>()
+    val recentlyPlayed = ArrayList<Track>(HOME_SHELF_LIMIT)
+    val mostPlayed = ArrayList<Track>(HOME_SHELF_LIMIT)
+    val recentlyAdded = ArrayList<Track>(HOME_SHELF_LIMIT)
     val genreSet = HashSet<String>()
     val albumBuckets = LinkedHashMap<String, ArrayList<Track>>()
     val artistBuckets = LinkedHashMap<String, ArrayList<Track>>()
@@ -109,17 +145,19 @@ private fun buildLibrarySnapshot(tracks: List<Track>): LibrarySnapshot {
         tracksById[track.id] = track
         totalDuration += track.durationMs
         if (track.isFavorite) favorites.add(track)
-        if (track.lastPlayedAt != null) playedTracks.add(track)
-        if (track.playCount > 0) countedTracks.add(track)
+        if (track.lastPlayedAt != null) {
+            insertTopK(recentlyPlayed, track, HOME_SHELF_LIMIT) { it.lastPlayedAt ?: 0L }
+        }
+        if (track.playCount > 0) {
+            insertTopK(mostPlayed, track, HOME_SHELF_LIMIT) { it.playCount.toLong() }
+        }
+        insertTopK(recentlyAdded, track, HOME_SHELF_LIMIT) { it.dateAdded }
         genreSet.add(track.genre)
         albumBuckets.getOrPut(track.album) { ArrayList() }.add(track)
         artistBuckets.getOrPut(track.artist) { ArrayList() }.add(track)
     }
 
-    val recentlyPlayed = playedTracks.sortedByDescending { it.lastPlayedAt }.take(12)
-    val mostPlayed = countedTracks.sortedByDescending { it.playCount }.take(12)
-    val recentlyAdded = tracks.sortedByDescending { it.dateAdded }.take(12)
-    val genres = genreSet.sorted()
+    val genres = genreSet.sortedWith(String.CASE_INSENSITIVE_ORDER)
 
     val albums = albumBuckets.entries.map { (albumName, albumTracks) ->
         val lead = albumTracks[0]
@@ -130,10 +168,10 @@ private fun buildLibrarySnapshot(tracks: List<Track>): LibrarySnapshot {
             seedColor = albumTracks.firstNotNullOfOrNull { it.artworkSeedColor },
             tracks = albumTracks
         )
-    }.sortedBy { it.name.lowercase() }
+    }.sortedWith(CASE_INSENSITIVE_ALBUM_NAME)
 
     val artists = artistBuckets.entries.map { (artistName, artistTracks) ->
-        val albumNames = HashSet<String>()
+        val albumNames = HashSet<String>(artistTracks.size)
         for (t in artistTracks) albumNames.add(t.album)
         ArtistGroup(
             name = artistName,
@@ -142,7 +180,7 @@ private fun buildLibrarySnapshot(tracks: List<Track>): LibrarySnapshot {
             tracks = artistTracks,
             albumCount = albumNames.size
         )
-    }.sortedBy { it.name.lowercase() }
+    }.sortedWith(CASE_INSENSITIVE_ARTIST_NAME)
 
     return LibrarySnapshot(
         tracks = tracks,
@@ -184,8 +222,8 @@ private fun computeFilteredTracks(tracks: List<Track>, filters: LibraryUiFilters
     }
 
     return when (filters.sortOption) {
-        SortOption.TITLE -> base.sortedBy { it.title.lowercase() }
-        SortOption.ARTIST -> base.sortedBy { it.artist.lowercase() }
+        SortOption.TITLE -> base.sortedWith(CASE_INSENSITIVE_TRACK_TITLE)
+        SortOption.ARTIST -> base.sortedWith(CASE_INSENSITIVE_TRACK_ARTIST)
         SortOption.DATE_ADDED -> base.sortedByDescending { it.dateAdded }
         SortOption.DURATION -> base.sortedByDescending { it.durationMs }
         SortOption.MOST_PLAYED -> base.sortedByDescending { it.playCount }
@@ -206,6 +244,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _selectedPlaylistId = MutableStateFlow<String?>(null)
     private val _isNowPlayingExpanded = MutableStateFlow(false)
     private val _isImporting = MutableStateFlow(false)
+    private val _isScanningDevice = MutableStateFlow(false)
+    private val _preferencesLoaded = MutableStateFlow(false)
     private val _statusBanner = MutableStateFlow<String?>(null)
     private val _sleepTimer = MutableStateFlow(SleepTimerState())
 
@@ -218,15 +258,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val playlistId: String?,
         val expanded: Boolean,
         val importing: Boolean,
+        val scanning: Boolean,
+        val prefsLoaded: Boolean,
         val banner: String?
     )
 
-    private val librarySnapshotFlow = repository.tracks
+    // Single shared upstream Room track flow eliminates duplicate SQLite queries & entity-to-domain mappings
+    private val sharedTracksFlow = repository.tracks
+        .flowOn(Dispatchers.Default)
+        .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
+    private val librarySnapshotFlow = sharedTracksFlow
         .map(::buildLibrarySnapshot)
         .flowOn(Dispatchers.Default)
+        .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
 
     private val filteredTracksFlow = combine(
-        repository.tracks,
+        sharedTracksFlow,
         _filters,
         ::computeFilteredTracks
     ).flowOn(Dispatchers.Default)
@@ -237,6 +285,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _selectedPlaylistId,
         _isNowPlayingExpanded,
         _isImporting,
+        _isScanningDevice,
+        _preferencesLoaded,
         _statusBanner
     ) { arr ->
         UiNavOverlay(
@@ -245,7 +295,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             playlistId = arr[2] as String?,
             expanded = arr[3] as Boolean,
             importing = arr[4] as Boolean,
-            banner = arr[5] as String?
+            scanning = arr[5] as Boolean,
+            prefsLoaded = arr[6] as Boolean,
+            banner = arr[7] as String?
         )
     }
 
@@ -297,6 +349,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             selectedPlaylistId = overlay.playlistId,
             isNowPlayingExpanded = overlay.expanded,
             isImporting = overlay.importing,
+            isScanningDevice = overlay.scanning,
+            preferencesLoaded = overlay.prefsLoaded,
             statusBanner = overlay.banner
         )
     }.stateIn(
@@ -336,24 +390,25 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 bassBoostStrength = prefs.bassBoostStrength
             )
             audioEngine.setSpatializationEnabled(prefs.dolbyAtmosEnabled)
+            _preferencesLoaded.value = true
         }
 
         // Sync Room metadata updates (like favorite / lyrics changes) into active queue & restore last session
+        // Reuses precomputed snapshot.tracksById instead of rebuilding duplicate HashMaps on Main thread
         viewModelScope.launch {
-            repository.tracks.collect { tracks ->
-                audioEngine.updateTrackMetadataInQueue(tracks.associateBy { it.id })
-                if (!sessionRestored && tracks.isNotEmpty()) {
+            librarySnapshotFlow.collect { snapshot ->
+                audioEngine.updateTrackMetadataInQueue(snapshot.tracksById)
+                if (!sessionRestored && snapshot.tracks.isNotEmpty()) {
                     sessionRestored = true
-                    restoreLastPlaybackSession(tracks)
+                    restoreLastPlaybackSession(snapshot.tracks, snapshot.tracksById)
                 }
             }
         }
     }
 
-    private suspend fun restoreLastPlaybackSession(tracks: List<Track>) {
+    private suspend fun restoreLastPlaybackSession(tracks: List<Track>, byId: Map<String, Track>) {
         if (audioEngine.playbackState.value.queue.isNotEmpty()) return
         val prefs = preferencesRepo.preferences.first()
-        val byId = tracks.associateBy { it.id }
         val savedQueue = prefs.lastQueueIds.mapNotNull { byId[it] }
         val queueToLoad = if (savedQueue.isNotEmpty()) savedQueue else tracks
         val targetIdx = prefs.lastTrackId?.let { id ->
@@ -444,6 +499,28 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun scanDeviceAudio(isAutomatic: Boolean = false) {
+        if (_isScanningDevice.value) return
+        viewModelScope.launch {
+            _isScanningDevice.value = true
+            val added = repository.scanDeviceAudio()
+            preferencesRepo.setInitialAutoScanCompleted(true)
+            _isScanningDevice.value = false
+            when {
+                added > 0 -> showBanner(
+                    "Found $added supported audio ${if (added == 1) "file" else "files"} on your device"
+                )
+                !isAutomatic -> showBanner("Library is up to date — no new supported audio files found")
+            }
+        }
+    }
+
+    fun markInitialAutoScanHandled() {
+        viewModelScope.launch {
+            preferencesRepo.setInitialAutoScanCompleted(true)
+        }
+    }
+
     // --- Playback Controls ---
     fun playTrack(track: Track, contextList: List<Track> = uiState.value.tracks) {
         viewModelScope.launch {
@@ -452,8 +529,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 showBanner("\"${track.title}\" is no longer accessible on device storage")
                 return@launch
             }
-            val list = if (contextList.any { it.id == track.id }) contextList else listOf(track)
-            val index = list.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            val foundIndex = contextList.indexOfFirst { it.id == track.id }
+            val list = if (foundIndex >= 0) contextList else listOf(track)
+            val index = if (foundIndex >= 0) foundIndex else 0
             audioEngine.playQueue(list, index, autoPlay = true)
         }
     }

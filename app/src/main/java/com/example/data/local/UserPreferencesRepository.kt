@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "cadence_preferences")
 
+private val DEFAULT_EQ_BANDS = listOf(0, 0, 0, 0, 0)
+
 data class UserPreferences(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val colorPreset: ColorPreset = ColorPreset.DYNAMIC_ARTWORK,
@@ -28,7 +30,7 @@ data class UserPreferences(
     val volume: Float = 0.85f,
     val eqEnabled: Boolean = false,
     val eqPreset: String = "Flat",
-    val eqBandsMb: List<Int> = listOf(0, 0, 0, 0, 0),
+    val eqBandsMb: List<Int> = DEFAULT_EQ_BANDS,
     val dolbyAtmosEnabled: Boolean = false,
     val atmosProfile: AtmosProfile = AtmosProfile.MUSIC,
     val spatialVirtualizerStrength: Int = 550,
@@ -37,7 +39,8 @@ data class UserPreferences(
     val reducedMotion: Boolean = false,
     val lastTrackId: String? = null,
     val lastPositionMs: Long = 0L,
-    val lastQueueIds: List<String> = emptyList()
+    val lastQueueIds: List<String> = emptyList(),
+    val initialAutoScanCompleted: Boolean = false
 )
 
 class UserPreferencesRepository(private val context: Context) {
@@ -62,6 +65,7 @@ class UserPreferencesRepository(private val context: Context) {
         val LAST_TRACK_ID = stringPreferencesKey("last_track_id")
         val LAST_POSITION_MS = longPreferencesKey("last_position_ms")
         val LAST_QUEUE_IDS = stringPreferencesKey("last_queue_ids")
+        val INITIAL_AUTO_SCAN_COMPLETED = booleanPreferencesKey("initial_auto_scan_completed")
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs: Preferences ->
@@ -82,7 +86,7 @@ class UserPreferencesRepository(private val context: Context) {
                 ?.split(",")
                 ?.mapNotNull { it.trim().toIntOrNull() }
                 ?.takeIf { it.size == 5 }
-                ?: listOf(0, 0, 0, 0, 0),
+                ?: DEFAULT_EQ_BANDS,
             dolbyAtmosEnabled = prefs[Keys.DOLBY_ATMOS_ENABLED] ?: false,
             atmosProfile = prefs[Keys.ATMOS_PROFILE]?.let { runCatching { AtmosProfile.valueOf(it) }.getOrNull() }
                 ?: AtmosProfile.MUSIC,
@@ -95,7 +99,8 @@ class UserPreferencesRepository(private val context: Context) {
             lastQueueIds = prefs[Keys.LAST_QUEUE_IDS]
                 ?.split("|")
                 ?.filter { it.isNotBlank() }
-                ?: emptyList()
+                ?: emptyList(),
+            initialAutoScanCompleted = prefs[Keys.INITIAL_AUTO_SCAN_COMPLETED] ?: false
         )
     }
 
@@ -162,7 +167,15 @@ class UserPreferencesRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.REDUCED_MOTION] = enabled }
     }
 
+    suspend fun setInitialAutoScanCompleted(completed: Boolean) {
+        context.dataStore.edit { it[Keys.INITIAL_AUTO_SCAN_COMPLETED] = completed }
+    }
+
+    private var lastPersistedQueueIds: List<String>? = null
+
     suspend fun savePlaybackSession(trackId: String?, positionMs: Long, queueIds: List<String>) {
+        val queueChanged = lastPersistedQueueIds != queueIds
+        val serializedQueue = if (queueChanged) queueIds.joinToString("|") else null
         context.dataStore.edit {
             if (trackId != null) {
                 it[Keys.LAST_TRACK_ID] = trackId
@@ -170,7 +183,12 @@ class UserPreferencesRepository(private val context: Context) {
                 it.remove(Keys.LAST_TRACK_ID)
             }
             it[Keys.LAST_POSITION_MS] = positionMs.coerceAtLeast(0L)
-            it[Keys.LAST_QUEUE_IDS] = queueIds.joinToString("|")
+            if (serializedQueue != null) {
+                it[Keys.LAST_QUEUE_IDS] = serializedQueue
+            }
+        }
+        if (queueChanged) {
+            lastPersistedQueueIds = queueIds
         }
     }
 }

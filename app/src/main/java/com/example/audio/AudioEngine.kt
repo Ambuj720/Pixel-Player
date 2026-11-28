@@ -87,6 +87,7 @@ class AudioEngine(private val context: Context) {
     private var preMuteVolume: Float = 0.85f
     private var serviceStarted = false
     private var lastRecordedTrackId: String? = null
+    private var cachedQueueIds: List<String> = emptyList()
     private var controllerFuture: ListenableFuture<MediaController>? = null
 
     // Bounded in-memory cache (max 256 KB) keyed by seed color so tracks sharing a palette reuse 1 tiny JPEG
@@ -256,6 +257,7 @@ class AudioEngine(private val context: Context) {
         val mediaItems = tracks.map { it.toMediaItem() }
 
         val startDuration = tracks[safeIndex].durationMs
+        cachedQueueIds = tracks.map { it.id }
         _playbackState.update {
             it.copy(
                 queue = tracks,
@@ -286,8 +288,18 @@ class AudioEngine(private val context: Context) {
     fun updateTrackMetadataInQueue(updatedTracksById: Map<String, Track>) {
         _playbackState.update { state ->
             if (state.queue.isEmpty()) return@update state
-            val refreshed = state.queue.map { old -> updatedTracksById[old.id] ?: old }
-            state.copy(queue = refreshed)
+            var anyChanged = false
+            val refreshed = ArrayList<Track>(state.queue.size)
+            for (old in state.queue) {
+                val updated = updatedTracksById[old.id]
+                if (updated != null && updated != old) {
+                    refreshed.add(updated)
+                    anyChanged = true
+                } else {
+                    refreshed.add(old)
+                }
+            }
+            if (!anyChanged) state else state.copy(queue = refreshed)
         }
     }
 
@@ -360,7 +372,9 @@ class AudioEngine(private val context: Context) {
             return
         }
         exoPlayer.addMediaItem(track.toMediaItem())
-        _playbackState.update { it.copy(queue = it.queue + track) }
+        val updatedQueue = currentQueue + track
+        cachedQueueIds = cachedQueueIds + track.id
+        _playbackState.update { it.copy(queue = updatedQueue) }
         emitCheckpoint()
     }
 
@@ -373,6 +387,7 @@ class AudioEngine(private val context: Context) {
         val insertIndex = (state.currentIndex + 1).coerceIn(0, state.queue.size)
         exoPlayer.addMediaItem(insertIndex, track.toMediaItem())
         val updated = state.queue.toMutableList().apply { add(insertIndex, track) }
+        cachedQueueIds = updated.map { it.id }
         _playbackState.update { it.copy(queue = updated) }
         emitCheckpoint()
     }
@@ -381,6 +396,7 @@ class AudioEngine(private val context: Context) {
         val state = _playbackState.value
         if (index !in state.queue.indices) return
         val updated = state.queue.toMutableList().apply { removeAt(index) }
+        cachedQueueIds = updated.map { it.id }
         exoPlayer.removeMediaItem(index)
         val newCurrent = when {
             updated.isEmpty() -> -1
@@ -399,6 +415,7 @@ class AudioEngine(private val context: Context) {
         val updated = state.queue.toMutableList()
         val moved = updated.removeAt(fromIndex)
         updated.add(toIndex, moved)
+        cachedQueueIds = updated.map { it.id }
         val newCurrent = exoPlayer.currentMediaItemIndex.coerceIn(-1, updated.lastIndex)
         _playbackState.update { it.copy(queue = updated, currentIndex = newCurrent) }
         emitCheckpoint()
@@ -488,7 +505,7 @@ class AudioEngine(private val context: Context) {
         onSessionCheckpoint?.invoke(
             st.currentTrack?.id,
             _playbackProgress.value.positionMs,
-            st.queue.map { it.id }
+            cachedQueueIds
         )
     }
 

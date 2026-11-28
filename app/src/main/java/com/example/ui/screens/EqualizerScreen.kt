@@ -2,7 +2,6 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.provider.Settings
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -30,7 +29,6 @@ import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.SpatialAudio
 import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.SurroundSound
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -44,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
@@ -65,6 +64,8 @@ import com.example.ui.components.formatDurationMs
 import com.example.ui.theme.MonoFontFamily
 import kotlin.math.roundToInt
 
+private val STUDIO_SPEEDS = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun EqualizerScreen(
@@ -85,7 +86,6 @@ fun EqualizerScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
 
     BoxWithConstraints(
         modifier = modifier
@@ -503,7 +503,7 @@ fun EqualizerScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                speeds.forEach { spd ->
+                                STUDIO_SPEEDS.forEach { spd ->
                                     FilterChip(
                                         selected = playbackSpeed == spd,
                                         onClick = { onSpeedChange(spd) },
@@ -695,7 +695,7 @@ fun EqualizerScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            speeds.forEach { spd ->
+                            STUDIO_SPEEDS.forEach { spd ->
                                 FilterChip(
                                     selected = playbackSpeed == spd,
                                     onClick = { onSpeedChange(spd) },
@@ -802,58 +802,64 @@ private fun EqCurveCanvas(
     val fillBottom = lineColor.copy(alpha = 0.02f)
     val gridColor = MaterialTheme.colorScheme.outlineVariant
 
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        val midY = h / 2f
+    Spacer(
+        modifier = modifier.drawWithCache {
+            val w = size.width
+            val h = size.height
+            val midY = h / 2f
 
-        drawLine(
-            color = gridColor,
-            start = Offset(0f, midY),
-            end = Offset(w, midY),
-            strokeWidth = 2f
-        )
+            val points = if (bands.isEmpty()) {
+                emptyList()
+            } else {
+                val stepX = if (bands.size > 1) w / (bands.size - 1).toFloat() else w
+                List(bands.size) { i ->
+                    val band = bands[i]
+                    val span = (band.maxMb - band.minMb).coerceAtLeast(1).toFloat()
+                    val norm = (band.levelMb - band.minMb).toFloat() / span
+                    val y = h - (norm * (h * 0.82f) + h * 0.09f)
+                    Offset(i * stepX, y)
+                }
+            }
 
-        if (bands.isEmpty()) return@Canvas
+            val curvePath = if (points.isNotEmpty()) {
+                Path().apply {
+                    moveTo(points.first().x, points.first().y)
+                    for (i in 0 until points.lastIndex) {
+                        val p0 = points[i]
+                        val p1 = points[i + 1]
+                        val midX = (p0.x + p1.x) / 2f
+                        cubicTo(midX, p0.y, midX, p1.y, p1.x, p1.y)
+                    }
+                }
+            } else null
 
-        val stepX = if (bands.size > 1) w / (bands.size - 1).toFloat() else w
-        val points = bands.mapIndexed { i, band ->
-            val span = (band.maxMb - band.minMb).coerceAtLeast(1).toFloat()
-            val norm = (band.levelMb - band.minMb).toFloat() / span
-            val y = h - (norm * (h * 0.82f) + h * 0.09f)
-            Offset(i * stepX, y)
-        }
+            val fillPath = if (curvePath != null) {
+                Path().apply {
+                    addPath(curvePath)
+                    lineTo(points.last().x, h)
+                    lineTo(points.first().x, h)
+                    close()
+                }
+            } else null
 
-        val curvePath = Path().apply {
-            moveTo(points.first().x, points.first().y)
-            for (i in 0 until points.lastIndex) {
-                val p0 = points[i]
-                val p1 = points[i + 1]
-                val midX = (p0.x + p1.x) / 2f
-                cubicTo(midX, p0.y, midX, p1.y, p1.x, p1.y)
+            val fillBrush = Brush.verticalGradient(listOf(fillTop, fillBottom))
+            val strokeStyle = Stroke(width = 6f, cap = StrokeCap.Round)
+
+            onDrawBehind {
+                drawLine(
+                    color = gridColor,
+                    start = Offset(0f, midY),
+                    end = Offset(w, midY),
+                    strokeWidth = 2f
+                )
+                if (fillPath != null && curvePath != null) {
+                    drawPath(path = fillPath, brush = fillBrush)
+                    drawPath(path = curvePath, color = lineColor, style = strokeStyle)
+                    for (pt in points) {
+                        drawCircle(color = lineColor, radius = 9f, center = pt)
+                    }
+                }
             }
         }
-
-        val fillPath = Path().apply {
-            addPath(curvePath)
-            lineTo(points.last().x, h)
-            lineTo(points.first().x, h)
-            close()
-        }
-
-        drawPath(
-            path = fillPath,
-            brush = Brush.verticalGradient(listOf(fillTop, fillBottom))
-        )
-
-        drawPath(
-            path = curvePath,
-            color = lineColor,
-            style = Stroke(width = 6f, cap = StrokeCap.Round)
-        )
-
-        points.forEach { pt ->
-            drawCircle(color = lineColor, radius = 9f, center = pt)
-        }
-    }
+    )
 }

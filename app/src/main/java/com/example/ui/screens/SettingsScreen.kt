@@ -27,10 +27,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -66,6 +67,7 @@ fun SettingsScreen(
     onGaplessChange: (Boolean) -> Unit,
     onReducedMotionChange: (Boolean) -> Unit,
     onImportClick: () -> Unit,
+    onScanDeviceClick: () -> Unit,
     onGenerateSamplesClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -317,8 +319,34 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFontFamily),
                         color = MaterialTheme.colorScheme.primary
                     )
+                    Button(
+                        onClick = onScanDeviceClick,
+                        enabled = !uiState.isScanningDevice,
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("settings_scan_device_button")
+                    ) {
+                        if (uiState.isScanningDevice) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        } else {
+                            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (uiState.isScanningDevice) "Scanning Device…" else "Scan Device for Audio Files",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
+                        FilledTonalButton(
                             onClick = onImportClick,
                             shape = CircleShape,
                             modifier = Modifier
@@ -354,57 +382,6 @@ fun SettingsScreen(
                 }
             }
         }
-
-        // Hardware Keyboard Shortcuts Reference (Desktop / Tablet / Chromebook)
-        item(key = "keyboard_shortcuts") {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = RoundedCornerShape(28.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Keyboard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Keyboard Shortcuts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    }
-                    ShortcutRow("Space", "Play / Pause")
-                    ShortcutRow("← / →", "Seek backward / forward 5s")
-                    ShortcutRow("N / P", "Next / Previous track")
-                    ShortcutRow("↑ / ↓", "Volume up / down")
-                    ShortcutRow("M", "Mute / Unmute")
-                    ShortcutRow("S / R", "Toggle Shuffle / Cycle Repeat")
-                }
-            }
-        }
-        }
-    }
-}
-
-@Composable
-private fun ShortcutRow(keyLabel: String, actionLabel: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = actionLabel,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Text(
-                text = keyLabel,
-                style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-            )
         }
     }
 }

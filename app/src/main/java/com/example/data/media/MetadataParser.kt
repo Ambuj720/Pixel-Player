@@ -34,7 +34,13 @@ class MetadataParser(private val context: Context) {
             var displayName = uri.lastPathSegment?.substringAfterLast('/') ?: "Unknown Track"
             var fileSize = 0L
             if (uri.scheme == "content") {
-                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                context.contentResolver.query(
+                    uri,
+                    DISPLAY_NAME_AND_SIZE_PROJECTION,
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
                     val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                     val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
                     if (cursor.moveToFirst()) {
@@ -87,11 +93,11 @@ class MetadataParser(private val context: Context) {
 
                 val embeddedBytes = retriever.embeddedPicture
                 if (embeddedBytes != null && embeddedBytes.isNotEmpty()) {
-                    val bitmap = decodeScaledBitmap(embeddedBytes, 600)
+                    val bitmap = decodeScaledBitmap(embeddedBytes, 512)
                     if (bitmap != null) {
                         val artFile = File(artworkDir, "art_$trackId.jpg")
                         FileOutputStream(artFile).use { out ->
-                            bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out)
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                         }
                         artworkPath = artFile.absolutePath
                         seedColor = DynamicColorExtractor.extractSeedColorArgb(bitmap)
@@ -139,11 +145,16 @@ class MetadataParser(private val context: Context) {
     private fun decodeScaledBitmap(bytes: ByteArray, maxDim: Int): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var sampleSize = 1
-        while (bounds.outWidth / sampleSize > maxDim * 2 || bounds.outHeight / sampleSize > maxDim * 2) {
+        while (bounds.outWidth / sampleSize > maxDim || bounds.outHeight / sampleSize > maxDim) {
             sampleSize *= 2
         }
-        val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            // Opaque JPEG album art needs no alpha channel — RGB_565 cuts decode RAM in half
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
     }
 
@@ -165,31 +176,36 @@ class MetadataParser(private val context: Context) {
     }
 
     companion object {
+        private val DISPLAY_NAME_AND_SIZE_PROJECTION = arrayOf(
+            OpenableColumns.DISPLAY_NAME,
+            OpenableColumns.SIZE
+        )
         private val LRC_LINE_REGEX = Regex("""^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?]\s*(.*)$""")
 
         fun parseLyrics(raw: String?): List<LyricLine> {
             if (raw.isNullOrBlank()) return emptyList()
-            return raw.lines()
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .map { line ->
-                    val match = LRC_LINE_REGEX.matchEntire(line)
-                    if (match != null) {
-                        val min = match.groupValues[1].toLongOrNull() ?: 0L
-                        val sec = match.groupValues[2].toLongOrNull() ?: 0L
-                        val fracStr = match.groupValues[3]
-                        val ms = when (fracStr.length) {
-                            1 -> (fracStr.toLongOrNull() ?: 0L) * 100L
-                            2 -> (fracStr.toLongOrNull() ?: 0L) * 10L
-                            3 -> fracStr.toLongOrNull() ?: 0L
-                            else -> 0L
-                        }
-                        val text = match.groupValues[4].ifBlank { "♪" }
-                        LyricLine(timestampMs = min * 60_000L + sec * 1_000L + ms, text = text)
-                    } else {
-                        LyricLine(timestampMs = null, text = line)
+            val result = ArrayList<LyricLine>(32)
+            for (rawLine in raw.lineSequence()) {
+                val line = rawLine.trim()
+                if (line.isEmpty()) continue
+                val match = LRC_LINE_REGEX.matchEntire(line)
+                if (match != null) {
+                    val min = match.groupValues[1].toLongOrNull() ?: 0L
+                    val sec = match.groupValues[2].toLongOrNull() ?: 0L
+                    val fracStr = match.groupValues[3]
+                    val ms = when (fracStr.length) {
+                        1 -> (fracStr.toLongOrNull() ?: 0L) * 100L
+                        2 -> (fracStr.toLongOrNull() ?: 0L) * 10L
+                        3 -> fracStr.toLongOrNull() ?: 0L
+                        else -> 0L
                     }
+                    val text = match.groupValues[4].ifBlank { "♪" }
+                    result.add(LyricLine(timestampMs = min * 60_000L + sec * 1_000L + ms, text = text))
+                } else {
+                    result.add(LyricLine(timestampMs = null, text = line))
                 }
+            }
+            return result
         }
     }
 }

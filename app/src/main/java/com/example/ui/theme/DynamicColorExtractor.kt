@@ -25,25 +25,27 @@ object DynamicColorExtractor {
         val bucketG = FloatArray(24)
         val bucketB = FloatArray(24)
 
-        for (y in 0 until scaled.height) {
-            for (x in 0 until scaled.width) {
-                val pixel = scaled.getPixel(x, y)
-                val r = AndroidColor.red(pixel)
-                val g = AndroidColor.green(pixel)
-                val b = AndroidColor.blue(pixel)
-                AndroidColor.RGBToHSV(r, g, b, hsv)
-                val sat = hsv[1]
-                val value = hsv[2]
-                // Skip near-black and washed-out whites unless nothing else exists
-                val vibrancy = (sat * sat * 2.4f + 0.08f) * (1f - abs(value - 0.58f))
-                val bucket = ((hsv[0] / 15f).toInt()).coerceIn(0, 23)
-                bucketWeight[bucket] += vibrancy
-                bucketR[bucket] += r * vibrancy
-                bucketG[bucket] += g * vibrancy
-                bucketB[bucket] += b * vibrancy
-            }
-        }
+        val w = scaled.width
+        val h = scaled.height
+        val pixels = IntArray(w * h)
+        scaled.getPixels(pixels, 0, w, 0, 0, w, h)
         if (scaled != bitmap) scaled.recycle()
+
+        for (pixel in pixels) {
+            val r = (pixel ushr 16) and 0xFF
+            val g = (pixel ushr 8) and 0xFF
+            val b = pixel and 0xFF
+            AndroidColor.RGBToHSV(r, g, b, hsv)
+            val sat = hsv[1]
+            val value = hsv[2]
+            // Skip near-black and washed-out whites unless nothing else exists
+            val vibrancy = (sat * sat * 2.4f + 0.08f) * (1f - abs(value - 0.58f))
+            val bucket = ((hsv[0] / 15f).toInt()).coerceIn(0, 23)
+            bucketWeight[bucket] += vibrancy
+            bucketR[bucket] += r * vibrancy
+            bucketG[bucket] += g * vibrancy
+            bucketB[bucket] += b * vibrancy
+        }
 
         var bestBucket = 0
         var maxWeight = -1f
@@ -151,13 +153,16 @@ object DynamicColorExtractor {
         val c = (1f - abs(2f * lightness - 1f)) * saturation
         val x = c * (1f - abs((hue / 60f) % 2f - 1f))
         val m = lightness - c / 2f
-        val (r1, g1, b1) = when {
-            hue < 60f -> Triple(c, x, 0f)
-            hue < 120f -> Triple(x, c, 0f)
-            hue < 180f -> Triple(0f, c, x)
-            hue < 240f -> Triple(0f, x, c)
-            hue < 300f -> Triple(x, 0f, c)
-            else -> Triple(c, 0f, x)
+        val r1: Float
+        val g1: Float
+        val b1: Float
+        when {
+            hue < 60f -> { r1 = c; g1 = x; b1 = 0f }
+            hue < 120f -> { r1 = x; g1 = c; b1 = 0f }
+            hue < 180f -> { r1 = 0f; g1 = c; b1 = x }
+            hue < 240f -> { r1 = 0f; g1 = x; b1 = c }
+            hue < 300f -> { r1 = x; g1 = 0f; b1 = c }
+            else -> { r1 = c; g1 = 0f; b1 = x }
         }
         return Color(
             red = (r1 + m).coerceIn(0f, 1f),

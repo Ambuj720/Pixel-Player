@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material3.DropdownMenu
@@ -197,6 +199,7 @@ fun AlbumCard(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(26.dp),
         tonalElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
         modifier = modifier
             .clip(RoundedCornerShape(26.dp))
             .clickable(onClick = onClick)
@@ -263,6 +266,7 @@ fun ArtistCard(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(28.dp),
         tonalElevation = 1.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f)),
         modifier = modifier
             .clip(RoundedCornerShape(28.dp))
             .clickable(onClick = onClick)
@@ -311,6 +315,7 @@ fun PlaylistCard(
         color = MaterialTheme.colorScheme.surfaceContainer,
         shape = RoundedCornerShape(28.dp),
         tonalElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
         modifier = modifier
             .clip(RoundedCornerShape(28.dp))
             .clickable(onClick = onClick)
@@ -385,10 +390,17 @@ fun QuickPlayTile(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
         shape = RoundedCornerShape(20.dp),
+        tonalElevation = if (isCurrent) 3.dp else 1.dp,
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.32f)
+        ),
         modifier = modifier
-            .height(64.dp)
+            .height(68.dp)
             .clip(RoundedCornerShape(20.dp))
             .clickable(onClick = onClick)
             .testTag("quick_play_${track.id}")
@@ -397,26 +409,53 @@ fun QuickPlayTile(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxSize()
         ) {
-            TrackArtwork(
-                artworkPath = track.artworkPath,
-                title = track.title,
-                seedColor = track.artworkSeedColor,
-                shape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp),
-                modifier = Modifier.size(64.dp)
-            )
+            Box(modifier = Modifier.size(68.dp)) {
+                TrackArtwork(
+                    artworkPath = track.artworkPath,
+                    title = track.title,
+                    seedColor = track.artworkSeedColor,
+                    shape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp),
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (isCurrent) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.36f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            shape = CircleShape,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Rounded.GraphicEq else Icons.Filled.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
                 Text(
                     text = track.title,
                     style = MaterialTheme.typography.titleSmall,
+                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
                     color = if (isCurrent) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Spacer(modifier = Modifier.height(1.dp))
                 Text(
                     text = track.artist,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isCurrent) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                    color = if (isCurrent) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

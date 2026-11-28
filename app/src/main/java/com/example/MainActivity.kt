@@ -45,11 +45,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -145,6 +140,61 @@ fun CadenceApp(
 
     var notificationPermissionRequested by remember { mutableStateOf(false) }
 
+    val audioReadPermission = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+    }
+
+    var pendingManualScan by remember { mutableStateOf(false) }
+    var autoScanCheckedThisSession by remember { mutableStateOf(false) }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val wasManual = pendingManualScan
+        pendingManualScan = false
+        if (granted) {
+            viewModel.scanDeviceAudio(isAutomatic = !wasManual)
+        } else {
+            viewModel.markInitialAutoScanHandled()
+            viewModel.showBanner("Audio access denied — you can still import files manually anytime")
+        }
+    }
+
+    val launchDeviceScan = remember(context, audioReadPermission, audioPermissionLauncher) {
+        {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                audioReadPermission
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                viewModel.scanDeviceAudio(isAutomatic = false)
+            } else {
+                pendingManualScan = true
+                audioPermissionLauncher.launch(audioReadPermission)
+            }
+        }
+    }
+
+    // Automatically scan supported audio files right after install (and detect new tracks when permission is granted)
+    LaunchedEffect(uiState.preferencesLoaded) {
+        if (!uiState.preferencesLoaded || autoScanCheckedThisSession) return@LaunchedEffect
+        autoScanCheckedThisSession = true
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            audioReadPermission
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            viewModel.scanDeviceAudio(isAutomatic = true)
+        } else if (!uiState.preferences.initialAutoScanCompleted) {
+            pendingManualScan = false
+            audioPermissionLauncher.launch(audioReadPermission)
+        }
+    }
+
     // Request POST_NOTIFICATIONS on Android 13+ so the live media player notification displays in the shade
     LaunchedEffect(uiState.playback.isPlaying) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationPermissionRequested) {
@@ -226,54 +276,7 @@ fun CadenceApp(
     ) {
         Surface(
             color = MaterialTheme.colorScheme.background,
-            modifier = Modifier
-                .fillMaxSize()
-                .onPreviewKeyEvent { keyEvent ->
-                    if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    when (keyEvent.key) {
-                        Key.Spacebar -> {
-                            viewModel.togglePlayPause()
-                            true
-                        }
-                        Key.DirectionRight -> {
-                            viewModel.seekBy(5_000L)
-                            true
-                        }
-                        Key.DirectionLeft -> {
-                            viewModel.seekBy(-5_000L)
-                            true
-                        }
-                        Key.DirectionUp -> {
-                            viewModel.setVolume(uiState.playback.volume + 0.08f)
-                            true
-                        }
-                        Key.DirectionDown -> {
-                            viewModel.setVolume(uiState.playback.volume - 0.08f)
-                            true
-                        }
-                        Key.N -> {
-                            viewModel.nextTrack()
-                            true
-                        }
-                        Key.P -> {
-                            viewModel.previousTrack()
-                            true
-                        }
-                        Key.M -> {
-                            viewModel.toggleMute()
-                            true
-                        }
-                        Key.S -> {
-                            viewModel.toggleShuffle()
-                            true
-                        }
-                        Key.R -> {
-                            viewModel.cycleRepeatMode()
-                            true
-                        }
-                        else -> false
-                    }
-                }
+            modifier = Modifier.fillMaxSize()
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val isCompactHeight = maxHeight < 520.dp
@@ -285,6 +288,7 @@ fun CadenceApp(
                         uiState = uiState,
                         viewModel = viewModel,
                         onImportClick = launchAudioImport,
+                        onScanDeviceClick = launchDeviceScan,
                         onOpenAddToPlaylist = { track -> trackForPlaylistDialog = track },
                         onOpenCreatePlaylist = {
                             pendingTrackForNewPlaylist = null
@@ -384,6 +388,7 @@ fun CadenceApp(
                                         progressFlow = viewModel.playbackProgress,
                                         durationMs = uiState.playback.durationMs,
                                         onExpand = viewModel::openNowPlaying,
+                                        onPrevious = viewModel::previousTrack,
                                         onTogglePlayPause = viewModel::togglePlayPause,
                                         onNext = viewModel::nextTrack,
                                         compact = isCompactHeight,
@@ -412,6 +417,7 @@ fun CadenceApp(
                                         progressFlow = viewModel.playbackProgress,
                                         durationMs = uiState.playback.durationMs,
                                         onExpand = viewModel::openNowPlaying,
+                                        onPrevious = viewModel::previousTrack,
                                         onTogglePlayPause = viewModel::togglePlayPause,
                                         onNext = viewModel::nextTrack
                                     )
@@ -514,6 +520,7 @@ private fun ActiveDestinationContent(
     uiState: PlayerUiState,
     viewModel: PlayerViewModel,
     onImportClick: () -> Unit,
+    onScanDeviceClick: () -> Unit,
     onOpenAddToPlaylist: (Track) -> Unit,
     onOpenCreatePlaylist: () -> Unit,
     onOpenSleepTimer: () -> Unit,
@@ -525,6 +532,7 @@ private fun ActiveDestinationContent(
             playbackProgress = viewModel.playbackProgress,
             onSearchChange = viewModel::updateSearchQuery,
             onImportClick = onImportClick,
+            onScanDeviceClick = onScanDeviceClick,
             onGenerateSamplesClick = viewModel::generateLocalDemoTracks,
             onPlayTrack = viewModel::playTrack,
             onTogglePlayPause = viewModel::togglePlayPause,
@@ -608,6 +616,7 @@ private fun ActiveDestinationContent(
             onGaplessChange = viewModel::setGaplessEnabled,
             onReducedMotionChange = viewModel::setReducedMotion,
             onImportClick = onImportClick,
+            onScanDeviceClick = onScanDeviceClick,
             onGenerateSamplesClick = viewModel::generateLocalDemoTracks,
             modifier = modifier
         )

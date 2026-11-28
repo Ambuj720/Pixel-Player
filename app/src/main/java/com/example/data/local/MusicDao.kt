@@ -18,6 +18,9 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE uriString = :uriString LIMIT 1")
     suspend fun getTrackByUri(uriString: String): TrackEntity?
 
+    @Query("SELECT uriString FROM tracks")
+    suspend fun getAllUriStrings(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTracks(tracks: List<TrackEntity>)
 
@@ -48,6 +51,12 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlist_tracks WHERE playlistId = :playlistId ORDER BY sortOrder ASC")
     suspend fun getTracksForPlaylist(playlistId: String): List<PlaylistTrackEntity>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM playlist_tracks WHERE playlistId = :playlistId AND trackId = :trackId)")
+    suspend fun isTrackInPlaylist(playlistId: String, trackId: String): Boolean
+
+    @Query("SELECT MAX(sortOrder) FROM playlist_tracks WHERE playlistId = :playlistId")
+    suspend fun getMaxSortOrder(playlistId: String): Int?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertPlaylist(playlist: PlaylistEntity)
 
@@ -63,6 +72,9 @@ interface PlaylistDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistTrack(entry: PlaylistTrackEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPlaylistTracks(entries: List<PlaylistTrackEntity>)
+
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId AND trackId = :trackId")
     suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String)
 
@@ -72,8 +84,12 @@ interface PlaylistDao {
     @Transaction
     suspend fun replacePlaylistTrackOrder(playlistId: String, orderedTrackIds: List<String>, updatedAt: Long) {
         clearPlaylistTracks(playlistId)
-        orderedTrackIds.forEachIndexed { index, trackId ->
-            insertPlaylistTrack(PlaylistTrackEntity(playlistId, trackId, index))
+        if (orderedTrackIds.isNotEmpty()) {
+            val entries = ArrayList<PlaylistTrackEntity>(orderedTrackIds.size)
+            for (index in orderedTrackIds.indices) {
+                entries.add(PlaylistTrackEntity(playlistId, orderedTrackIds[index], index))
+            }
+            insertPlaylistTracks(entries)
         }
         touchPlaylist(playlistId, updatedAt)
     }

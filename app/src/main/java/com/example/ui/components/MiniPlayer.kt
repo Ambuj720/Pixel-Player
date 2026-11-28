@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -43,6 +44,7 @@ fun MiniPlayer(
     progressFlow: StateFlow<PlaybackProgress>,
     durationMs: Long,
     onExpand: () -> Unit,
+    onPrevious: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onNext: () -> Unit,
     compact: Boolean = false,
@@ -99,6 +101,21 @@ fun MiniPlayer(
                     )
                 }
 
+                Spacer(modifier = Modifier.width(4.dp))
+
+                IconButton(
+                    onClick = onPrevious,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("mini_previous_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SkipPrevious,
+                        contentDescription = "Previous track",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
                 Surface(
                     onClick = onTogglePlayPause,
                     shape = CircleShape,
@@ -114,8 +131,6 @@ fun MiniPlayer(
                         modifier = Modifier.padding(11.dp)
                     )
                 }
-
-                Spacer(modifier = Modifier.width(2.dp))
 
                 IconButton(
                     onClick = onNext,

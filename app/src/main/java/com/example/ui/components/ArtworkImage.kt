@@ -15,6 +15,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.size.Precision
 import com.example.R
 import java.io.File
 import java.util.Calendar
@@ -41,13 +42,15 @@ fun TrackArtwork(
         Brush.linearGradient(listOf(startColor, endColor))
     }
 
-    // Coil decodes off the main thread and automatically downsamples to the exact rendered view size
+    // Coil decodes off the main thread, uses RGB_565 (half RAM for opaque art), and reuses downsampled bitmaps
     val imageRequest = remember(context, artworkPath, fallbackRes) {
         val dataModel: Any = if (!artworkPath.isNullOrBlank()) File(artworkPath) else fallbackRes
         ImageRequest.Builder(context)
             .data(dataModel)
             .error(fallbackRes)
             .fallback(fallbackRes)
+            .allowRgb565(true)
+            .precision(Precision.INEXACT)
             .crossfade(150)
             .build()
     }
