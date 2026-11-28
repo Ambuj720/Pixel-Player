@@ -58,6 +58,8 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -927,173 +929,273 @@ private fun ContinueListeningHeroCard(
     onShuffleAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
-    val tertiaryContainer = MaterialTheme.colorScheme.tertiaryContainer
-    val secondaryContainer = MaterialTheme.colorScheme.secondaryContainer
-    val accentGlow = MaterialTheme.colorScheme.primary
+    val colorScheme = MaterialTheme.colorScheme
+    val isDarkSurface = colorScheme.surface.luminance() < 0.5f
+
+    // High-contrast rich gradient palette tailored for both Light and Dark themes
+    val gradStart = if (isDarkSurface) {
+        lerp(colorScheme.primaryContainer, colorScheme.primary, 0.30f)
+    } else {
+        colorScheme.primary
+    }
+    val gradMid = if (isDarkSurface) {
+        colorScheme.primaryContainer
+    } else {
+        lerp(colorScheme.primary, colorScheme.tertiary, 0.38f)
+    }
+    val gradEnd = if (isDarkSurface) {
+        colorScheme.surfaceContainerLowest
+    } else {
+        lerp(colorScheme.onPrimaryContainer, colorScheme.primary, 0.32f)
+    }
+    val scrimBottom = if (isDarkSurface) {
+        colorScheme.surfaceContainerLowest.copy(alpha = 0.72f)
+    } else {
+        Color.Black.copy(alpha = 0.44f)
+    }
+
+    val primaryTextColor = if (isDarkSurface) colorScheme.onPrimaryContainer else colorScheme.onPrimary
+    val secondaryTextColor = primaryTextColor.copy(alpha = 0.84f)
+    val tertiaryTextColor = primaryTextColor.copy(alpha = 0.68f)
+    val chipContainerColor = if (isDarkSurface) {
+        colorScheme.surfaceContainerLowest.copy(alpha = 0.50f)
+    } else {
+        Color.Black.copy(alpha = 0.24f)
+    }
+    val chipBorderColor = primaryTextColor.copy(alpha = 0.20f)
+    val playFabContainer = if (isDarkSurface) colorScheme.primary else colorScheme.onPrimary
+    val playFabContent = if (isDarkSurface) colorScheme.onPrimary else colorScheme.primary
+    val progressActiveColor = if (isDarkSurface) colorScheme.primary else colorScheme.onPrimary
 
     Surface(
-        color = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        color = gradEnd,
+        contentColor = primaryTextColor,
         shape = RoundedCornerShape(30.dp),
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+            color = primaryTextColor.copy(alpha = 0.18f)
         ),
-        shadowElevation = 6.dp,
+        shadowElevation = 8.dp,
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(30.dp))
-            .drawWithCache {
-                val baseGradient = Brush.linearGradient(
-                    colors = listOf(
-                        primaryContainer,
-                        tertiaryContainer.copy(alpha = 0.92f),
-                        secondaryContainer
-                    ),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, size.height)
-                )
-                val highlightOrb = Brush.radialGradient(
-                    colors = listOf(accentGlow.copy(alpha = 0.26f), Color.Transparent),
-                    center = Offset(size.width * 0.85f, size.height * 0.15f),
-                    radius = (size.width * 0.65f).coerceAtLeast(1f)
-                )
-                onDrawBehind {
-                    drawRect(baseGradient)
-                    drawRect(highlightOrb)
-                }
-            }
             .clickable(onClick = onCardClick)
             .testTag("continue_listening_card")
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .drawWithCache {
+                    val baseGradient = Brush.linearGradient(
+                        colorStops = arrayOf(
+                            0.0f to gradStart,
+                            0.52f to gradMid,
+                            1.0f to gradEnd
+                        ),
+                        start = Offset(0f, 0f),
+                        end = Offset(size.width, size.height)
+                    )
+                    val readabilityScrim = Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.0f to Color.Transparent,
+                            0.42f to scrimBottom.copy(alpha = scrimBottom.alpha * 0.45f),
+                            1.0f to scrimBottom
+                        )
+                    )
+                    val topRightGlow = Brush.radialGradient(
+                        colors = listOf(primaryTextColor.copy(alpha = 0.12f), Color.Transparent),
+                        center = Offset(size.width * 0.9f, size.height * 0.1f),
+                        radius = (size.width * 0.6f).coerceAtLeast(1f)
+                    )
+                    onDrawBehind {
+                        drawRect(baseGradient)
+                        drawRect(topRightGlow)
+                        drawRect(readabilityScrim)
+                    }
+                }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.28f),
-                    shape = CircleShape
+                // Zone 1: Top Status & Shuffle Bar (spaced cleanly so pills never collide)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    Surface(
+                        color = chipContainerColor,
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, chipBorderColor),
+                        modifier = Modifier.weight(1f, fill = false)
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.GraphicEq,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(14.dp)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.GraphicEq,
+                                contentDescription = null,
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (isPlaying) "NOW PLAYING" else "CONTINUE LISTENING",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    letterSpacing = 0.9.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = primaryTextColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.weight(0.01f, fill = true))
+
+                    Surface(
+                        onClick = onShuffleAll,
+                        shape = CircleShape,
+                        color = chipContainerColor,
+                        contentColor = primaryTextColor,
+                        border = BorderStroke(1.dp, chipBorderColor),
+                        modifier = Modifier.testTag("home_shuffle_all_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Text(
+                                text = "Shuffle",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
+
+                // Zone 2: Dedicated Artwork + Full-Width Track Metadata (never crowded by FAB)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        shadowElevation = 8.dp,
+                        border = BorderStroke(1.dp, primaryTextColor.copy(alpha = 0.24f)),
+                        modifier = Modifier.size(84.dp)
+                    ) {
+                        TrackArtwork(
+                            artworkPath = track.artworkPath,
+                            title = track.title,
+                            seedColor = track.artworkSeedColor,
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = track.title,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = primaryTextColor,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = if (isPlaying) "NOW PLAYING" else "CONTINUE LISTENING",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                letterSpacing = 0.9.sp,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            text = track.artist,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = secondaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = track.album,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tertiaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
-                Surface(
-                    onClick = onShuffleAll,
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.28f),
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.testTag("home_shuffle_all_button")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Rounded.Shuffle, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = "Shuffle All",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1
-                        )
-                    }
-                }
-            }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Zone 3: Contrasting Footer Strip — Progress / Duration + Tactile Play/Pause FAB
                 Surface(
+                    color = chipContainerColor,
                     shape = RoundedCornerShape(22.dp),
-                    shadowElevation = 8.dp,
-                    border = BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.16f)
-                    ),
-                    modifier = Modifier.size(86.dp)
+                    border = BorderStroke(1.dp, chipBorderColor),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    TrackArtwork(
-                        artworkPath = track.artworkPath,
-                        title = track.title,
-                        seedColor = track.artworkSeedColor,
-                        shape = RoundedCornerShape(22.dp),
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = track.title,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.ExtraBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = "${track.artist} • ${track.album}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "${track.genre} • ${formatDurationMs(durationMs)}",
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Surface(
-                    onClick = onPlayOrResume,
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shadowElevation = 6.dp,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .testTag("continue_play_button")
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(30.dp)
-                        )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (isCurrentlyLoaded) {
+                                ContinueListeningProgressBar(
+                                    progressFlow = progressFlow,
+                                    fallbackDurationMs = durationMs,
+                                    activeColor = progressActiveColor,
+                                    textColor = secondaryTextColor
+                                )
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "Ready to resume",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = primaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${track.genre} • ${formatDurationMs(durationMs)}",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
+                                        color = tertiaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        Surface(
+                            onClick = onPlayOrResume,
+                            shape = CircleShape,
+                            color = playFabContainer,
+                            contentColor = playFabContent,
+                            shadowElevation = 4.dp,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("continue_play_button")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        }
                     }
                 }
-            }
-
-            if (isCurrentlyLoaded) {
-                Spacer(modifier = Modifier.height(14.dp))
-                ContinueListeningProgressBar(
-                    progressFlow = progressFlow,
-                    fallbackDurationMs = durationMs
-                )
             }
         }
     }
@@ -1102,7 +1204,9 @@ private fun ContinueListeningHeroCard(
 @Composable
 private fun ContinueListeningProgressBar(
     progressFlow: StateFlow<PlaybackProgress>,
-    fallbackDurationMs: Long
+    fallbackDurationMs: Long,
+    activeColor: Color,
+    textColor: Color
 ) {
     val progressState by progressFlow.collectAsStateWithLifecycle()
     val effectiveDuration = if (progressState.durationMs > 0L) progressState.durationMs else fallbackDurationMs
@@ -1110,11 +1214,11 @@ private fun ContinueListeningProgressBar(
         (progressState.positionMs.toFloat() / effectiveDuration.toFloat()).coerceIn(0f, 1f)
     } else 0f
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         LinearProgressIndicator(
             progress = { fraction },
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f),
+            color = activeColor,
+            trackColor = textColor.copy(alpha = 0.24f),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(5.dp)
@@ -1127,12 +1231,12 @@ private fun ContinueListeningProgressBar(
             Text(
                 text = formatDurationMs(progressState.positionMs),
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f)
+                color = textColor
             )
             Text(
                 text = formatDurationMs(effectiveDuration),
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFontFamily),
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f)
+                color = textColor
             )
         }
     }
